@@ -1,0 +1,3 @@
+[submodule "GodotModules"]
+	path = GodotModules
+	url = https://github.com/mmgms/GodotModules.git
