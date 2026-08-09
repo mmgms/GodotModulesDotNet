@@ -267,9 +267,16 @@ public class PhysicsEngine{
 			}
 		}
 
+		var objectCollided = new List<PhysicsObject>();
+
 		foreach (var collision in collisions)
 		{
-			
+			if (objectCollided.Contains(collision.objectA) | objectCollided.Contains(collision.objectB)){
+				continue;
+			}
+			objectCollided.Add(collision.objectA);
+			objectCollided.Add(collision.objectB);
+
 			collision.objectA.collisionOccurred?.Invoke(new CollisionInfo {
 				other = collision.objectB,
 				position = collision.position,
