@@ -190,10 +190,9 @@ public class PhysicsEngine{
 
 	private Vector2 getUpdatedBallVelocityElastic(PhysicsObject self, PhysicsObject other)
 	{
-		var massCoeff1 = (self.data.mass - other.data.mass)/(self.data.mass + other.data.mass);
-		var massCoeff2 = (2 * other.data.mass)/(self.data.mass + other.data.mass);
+		var massCoeff = (2 * other.data.mass)/(self.data.mass + other.data.mass);
 
-		return self.velocity * massCoeff1 + other.velocity * massCoeff2;
+		return self.velocity - massCoeff * (self.velocity-other.velocity).Dot(self.position - other.position)/ (self.position - other.position).LengthSquared() * (self.position-other.position);
 
 	}
 
