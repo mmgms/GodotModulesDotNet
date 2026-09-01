@@ -4,16 +4,19 @@ using System.Linq;
 
 namespace AI;
 
-public class MonteCarloTreeSearch<TMove>
+public class MultiAgentMCTS<TMove, TAgent>
 {
-	private IGameStateEvaluator<TMove> _gameStateEvaluator;
-	private int _maxRollouts;
-	private float _c;
+	private IMultiAgentGameStateEvaluator<TMove, TAgent> gameStateEvaluator;
+	private int maxRollouts;
+	private float cFactor;
 
 	private class MCTSNode
 	{
 		public int Depth { get; }
-		public IGameState<TMove> State { get; }
+
+		public IMultiAgentGameState<TMove, TAgent> State { get; }
+		private readonly IMultiAgentGameStateEvaluator<TMove, TAgent> Evaluator;
+		public TAgent PlanningAgent;
 		public MCTSNode Parent { get; }
 		public TMove Action { get; }
 
@@ -22,37 +25,32 @@ public class MonteCarloTreeSearch<TMove>
 		public int Visits { get; private set; }
 		public float Wins { get; private set; }
 
-		private List<TMove> _untriedActions;
+		private List<TMove> UntriedActions;
 
-		public bool IsOpponent { get; }
-
-		private readonly IGameStateEvaluator<TMove> _evaluator;
 
 		public MCTSNode(
-			IGameState<TMove> state,
-			IGameStateEvaluator<TMove> evaluator,
+			TAgent agent,
+			IMultiAgentGameState<TMove, TAgent> state,
+			IMultiAgentGameStateEvaluator<TMove, TAgent> evaluator,
 			MCTSNode parent = null,
 			TMove action = default,
-			int depth = 0,
-			bool isOpponent = false)
+			int depth = 0)
 		{
+			PlanningAgent = agent;
 			State = state;
-			_evaluator = evaluator;
+			Evaluator = evaluator;
 
 			Parent = parent;
 			Action = action;
 
 			Depth = depth;
-			IsOpponent = isOpponent;
 
 			Children = new List<MCTSNode>();
 
 			Visits = 0;
 			Wins = 0;
 
-			_untriedActions = isOpponent
-				? state.GetAvailableMovesOpponent().ToList()
-				: state.GetAvailableMoves().ToList();
+			UntriedActions = state.GetAvailableMoves(state.GetCurrentExecutingAgent()).ToList();
 		}
 
 
@@ -64,33 +62,25 @@ public class MonteCarloTreeSearch<TMove>
 
 		public bool IsFullyExpanded()
 		{
-			return _untriedActions.Count == 0;
+			return UntriedActions.Count == 0;
 		}
 
 
 		public MCTSNode Expand(Random random)
 		{
-			int index = random.Next(_untriedActions.Count);
+			int index = random.Next(UntriedActions.Count);
 
-			TMove action = _untriedActions[index];
-			_untriedActions.RemoveAt(index);
+			TMove action = UntriedActions[index];
+			UntriedActions.RemoveAt(index);
 
 			var newState = State.GetNewStatePerMove(action);
 
-			var child = new MCTSNode(
-				newState,
-				_evaluator,
-				this,
-				action,
-				Depth + 1,
-				!IsOpponent
-			);
+			var child = new MCTSNode(PlanningAgent, newState, Evaluator, this, action, Depth + 1);
 
 			Children.Add(child);
 
 			return child;
 		}
-
 
 		public MCTSNode BestChild(float c)
 		{
@@ -112,18 +102,14 @@ public class MonteCarloTreeSearch<TMove>
 		{
 			var newState = State.GetDuplicated();
 
-			bool opponentTurn = IsOpponent;
-
 			for (int i = 0; i < maxRolloutDepth; i++)
 			{
 				if (newState.IsOver())
 				{
-					return _evaluator.GetTerminationValue(newState);
+					return Evaluator.GetTerminationValue(newState, PlanningAgent);
 				}
 
-				var moves = opponentTurn
-					? newState.GetAvailableMovesOpponent()
-					: newState.GetAvailableMoves();
+				var moves = newState.GetAvailableMoves(PlanningAgent);
 
 				var moveList = moves.ToList();
 
@@ -131,10 +117,9 @@ public class MonteCarloTreeSearch<TMove>
 					moveList[random.Next(moveList.Count)]
 				);
 
-				opponentTurn = !opponentTurn;
 			}
 
-			return _evaluator.EvaluateState(newState);
+			return Evaluator.EvaluateState(newState, PlanningAgent);
 		}
 
 
@@ -162,42 +147,38 @@ public class MonteCarloTreeSearch<TMove>
 
 
 	public TMove GetBestMove(
-		IGameState<TMove> state,
-		IGameStateEvaluator<TMove> evaluator,
+		TAgent agent,
+		IMultiAgentGameState<TMove, TAgent> state,
+		IMultiAgentGameStateEvaluator<TMove, TAgent> evaluator,
 		int iterations = 50,
 		int maxRollouts = 30,
 		float c = 1.4f)
 	{
-		_c = c;
-		_maxRollouts = maxRollouts;
-		_gameStateEvaluator = evaluator;
+		cFactor = c;
+		this.maxRollouts = maxRollouts;
+		gameStateEvaluator = evaluator;
 
-		return MctsSearch(state, iterations);
+		return MctsSearch(agent, state, iterations);
 	}
 
 
-	private TMove MctsSearch(
-		IGameState<TMove> rootState,
-		int iterations)
+	private TMove MctsSearch(TAgent agent, IMultiAgentGameState<TMove, TAgent> rootState, int iterations)
 	{
 		var random = new Random();
 
-		var root = new MCTSNode(
-			rootState.GetDuplicated(),
-			_gameStateEvaluator
-		);
+		var root = new MCTSNode(agent, rootState.GetDuplicated(), gameStateEvaluator);
 
 
 		for (int i = 0; i < iterations; i++)
 		{
 			var node = root;
 
-
+			Console.WriteLine("Executing Iteration {i}");
 			// Selection
 			while (!node.IsTerminal() &&
 					node.IsFullyExpanded())
 			{
-				node = node.BestChild(_c);
+				node = node.BestChild(cFactor);
 			}
 
 
@@ -211,7 +192,7 @@ public class MonteCarloTreeSearch<TMove>
 
 			// Simulation
 			float value = node.Rollout(
-				_maxRollouts,
+				maxRollouts,
 				random
 			);
 
@@ -223,5 +204,5 @@ public class MonteCarloTreeSearch<TMove>
 		var best = root.Children.MaxBy(x => x.Visits);
 
 		return best.Action;
-	}
+	}	
 }
