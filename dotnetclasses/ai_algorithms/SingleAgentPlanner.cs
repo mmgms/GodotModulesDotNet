@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace AI;
@@ -13,7 +14,12 @@ public class SingleAgentPlanner<TAction, TAgent>
 		public TAction action;
 		public int depth;
 	}
-	public TAction getBestAction(
+	public class PlanResult
+	{
+		public List<TAction> plan;
+		public float bestScore;
+	}
+	public PlanResult getPlan(
 		TAgent agent,
 		AI.IMultiAgentGameState<TAction, TAgent> state, 
 		AI.IMultiAgentGameStateEvaluator<TAction, TAgent> evaluator,
@@ -26,7 +32,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 		var start = new SearchNode();
 		start.state = state.GetDuplicated();
 
-		queue.Enqueue(start, -evaluator.EvaluateState(start.state, agent));
+		queue.Enqueue(start, 0);
 
 		SearchNode best = start;
 		float bestScore = float.NegativeInfinity;
@@ -38,25 +44,25 @@ public class SingleAgentPlanner<TAction, TAgent>
 			iterations += 1;
 			SearchNode current = queue.Dequeue();
 
-			if (current.depth >= maxDepth || iterations > maxIterations)
+			if (current.depth >= maxDepth)
 			{
+				Debug.Assert(isSameAgent(current.state.GetCurrentExecutingAgent(), agent));
 				var score = evaluator.EvaluateState(current.state, current.state.GetCurrentExecutingAgent());
-				Console.WriteLine($"Score: {score}");
+
 				if (score > bestScore)
 				{
 					best = current;
 					bestScore = score;
 				}
-				if (iterations > maxIterations)
-				{
-					break;
-				}
+				continue;
+			}
+			if (iterations > maxIterations)
+			{
 				continue;
 			}
 
 			var availableMoves = current.state.GetAvailableMoves(current.state.GetCurrentExecutingAgent()).ToList();
-			Console.WriteLine($"Available Moves: {availableMoves.ToList().Count}");
-			Console.WriteLine($"Depth: {current.depth}");
+
 			foreach (var action in availableMoves)
 			{
 				// expand with other policy until its our turn again
@@ -71,16 +77,23 @@ public class SingleAgentPlanner<TAction, TAgent>
 				newNode.action = action;
 				newNode.parent = current;
 
-				queue.Enqueue(newNode, -evaluator.EvaluateState(newNode.state, newNode.state.GetCurrentExecutingAgent()));
+				queue.Enqueue(newNode, 0);
 			}
 
 		}
 
+		var plan = new List<TAction>();
+
 		var currentNode = best;
-		while (currentNode.parent != start && currentNode != start)
+		while (currentNode != start)
 		{
+			plan.Add(currentNode.action);
 			currentNode = currentNode.parent;
 		}			
-		return currentNode.action;
+		plan.Reverse();
+		var res = new PlanResult();
+		res.plan = plan;
+		res.bestScore = bestScore;
+		return res;
 	}
 }
