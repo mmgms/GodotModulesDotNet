@@ -104,14 +104,14 @@ public class MultiAgentMCTS<TMove, TAgent>
 
 			for (int i = 0; i < maxRolloutDepth; i++)
 			{
-				if (newState.IsOver())
+				var moves = newState.GetAvailableMoves(newState.GetCurrentExecutingAgent());
+				var moveList = moves.ToList();
+				if (newState.IsOver() || moveList.Count == 0)
 				{
 					return Evaluator.GetTerminationValue(newState, PlanningAgent);
 				}
 
-				var moves = newState.GetAvailableMoves(PlanningAgent);
 
-				var moveList = moves.ToList();
 
 				newState.ExecuteMove(
 					moveList[random.Next(moveList.Count)]
@@ -150,6 +150,7 @@ public class MultiAgentMCTS<TMove, TAgent>
 		TAgent agent,
 		IMultiAgentGameState<TMove, TAgent> state,
 		IMultiAgentGameStateEvaluator<TMove, TAgent> evaluator,
+		Action<int> OnIterationCompleted,
 		int iterations = 50,
 		int maxRollouts = 30,
 		float c = 1.4f)
@@ -158,47 +159,38 @@ public class MultiAgentMCTS<TMove, TAgent>
 		this.maxRollouts = maxRollouts;
 		gameStateEvaluator = evaluator;
 
-		return MctsSearch(agent, state, iterations);
+		return MctsSearch(agent, state, iterations, OnIterationCompleted);
 	}
 
 
-	private TMove MctsSearch(TAgent agent, IMultiAgentGameState<TMove, TAgent> rootState, int iterations)
+	private TMove MctsSearch(TAgent agent, IMultiAgentGameState<TMove, TAgent> rootState, int iterations, Action<int> OnIterationCompleted=null)
 	{
 		var random = new Random();
 
 		var root = new MCTSNode(agent, rootState.GetDuplicated(), gameStateEvaluator);
 
-
 		for (int i = 0; i < iterations; i++)
 		{
 			var node = root;
 
-			Console.WriteLine("Executing Iteration {i}");
 			// Selection
-			while (!node.IsTerminal() &&
-					node.IsFullyExpanded())
+			while (!node.IsTerminal() && node.IsFullyExpanded())
 			{
 				node = node.BestChild(cFactor);
 			}
 
-
 			// Expansion
-			if (!node.IsTerminal() &&
-				!node.IsFullyExpanded())
+			if (!node.IsTerminal() && !node.IsFullyExpanded())
 			{
 				node = node.Expand(random);
 			}
 
-
 			// Simulation
-			float value = node.Rollout(
-				maxRollouts,
-				random
-			);
-
+			float value = node.Rollout(maxRollouts, random);
 
 			// Backpropagation
 			node.Backpropagate(value);
+			OnIterationCompleted?.Invoke(i);
 		}
 
 		var best = root.Children.MaxBy(x => x.Visits);
