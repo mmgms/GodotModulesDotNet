@@ -4,41 +4,31 @@ using System.Linq;
 
 namespace AI;
 
-public class MultiAgentMCTS<TMove, TAgent>
+public class MultiAgentMCTS<TAction, TAgent>
 {
-	private IMultiAgentGameStateEvaluator<TMove, TAgent> gameStateEvaluator;
-	private int maxRollouts;
-	private float cFactor;
-
 	private class MCTSNode
 	{
 		public int Depth { get; }
 
-		public IMultiAgentGameState<TMove, TAgent> State { get; }
-		private readonly IMultiAgentGameStateEvaluator<TMove, TAgent> Evaluator;
-		public TAgent PlanningAgent;
+		public IMultiAgentGameState<TAction, TAgent> State { get; }
 		public MCTSNode Parent { get; }
-		public TMove Action { get; }
+		public TAction Action { get; }
 
 		public List<MCTSNode> Children { get; }
 
 		public int Visits { get; private set; }
 		public float Wins { get; private set; }
 
-		private List<TMove> UntriedActions;
+		private List<TAction> UntriedActions;
 
 
 		public MCTSNode(
-			TAgent agent,
-			IMultiAgentGameState<TMove, TAgent> state,
-			IMultiAgentGameStateEvaluator<TMove, TAgent> evaluator,
+			IMultiAgentGameState<TAction, TAgent> state,
 			MCTSNode parent = null,
-			TMove action = default,
+			TAction action = default,
 			int depth = 0)
 		{
-			PlanningAgent = agent;
 			State = state;
-			Evaluator = evaluator;
 
 			Parent = parent;
 			Action = action;
@@ -66,16 +56,24 @@ public class MultiAgentMCTS<TMove, TAgent>
 		}
 
 
-		public MCTSNode Expand(Random random)
+		public MCTSNode Expand(Random random, 
+			TAgent agent,
+			Func<IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentPolicy,
+			Func<TAgent, TAgent, bool> isSameAgent)
 		{
 			int index = random.Next(UntriedActions.Count);
 
-			TMove action = UntriedActions[index];
+			TAction action = UntriedActions[index];
 			UntriedActions.RemoveAt(index);
 
 			var newState = State.GetNewStatePerMove(action);
 
-			var child = new MCTSNode(PlanningAgent, newState, Evaluator, this, action, Depth + 1);
+			while(!isSameAgent(newState.GetCurrentExecutingAgent(), agent))
+			{
+				newState.ExecuteMove(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
+			}
+
+			var child = new MCTSNode(newState, this, action, Depth + 1);
 
 			Children.Add(child);
 
@@ -98,7 +96,11 @@ public class MultiAgentMCTS<TMove, TAgent>
 
 		public float Rollout(
 			int maxRolloutDepth,
-			Random random)
+			IMultiAgentGameStateEvaluator<TAction, TAgent> evaluator,
+			Random random,
+			TAgent agent,
+			Func<IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentPolicy,
+			Func<TAgent, TAgent, bool> isSameAgent)
 		{
 			var newState = State.GetDuplicated();
 
@@ -106,20 +108,21 @@ public class MultiAgentMCTS<TMove, TAgent>
 			{
 				var moves = newState.GetAvailableMoves(newState.GetCurrentExecutingAgent());
 				var moveList = moves.ToList();
+
 				if (newState.IsOver() || moveList.Count == 0)
 				{
-					return Evaluator.GetTerminationValue(newState, PlanningAgent);
+					return evaluator.GetTerminationValue(newState, agent);
 				}
 
-
-
-				newState.ExecuteMove(
-					moveList[random.Next(moveList.Count)]
-				);
+				newState.ExecuteMove(moveList[random.Next(moveList.Count)]);
+				while(!isSameAgent(newState.GetCurrentExecutingAgent(), agent))
+				{
+					newState.ExecuteMove(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
+				}
 
 			}
 
-			return Evaluator.EvaluateState(newState, PlanningAgent);
+			return evaluator.EvaluateState(newState, agent);
 		}
 
 
@@ -144,30 +147,28 @@ public class MultiAgentMCTS<TMove, TAgent>
 			return exploit + explore;
 		}
 	}
-
-
-	public TMove GetBestMove(
-		TAgent agent,
-		IMultiAgentGameState<TMove, TAgent> state,
-		IMultiAgentGameStateEvaluator<TMove, TAgent> evaluator,
-		Action<int> OnIterationCompleted,
-		int iterations = 50,
-		int maxRollouts = 30,
-		float c = 1.4f)
+	public class PlanResult
 	{
-		cFactor = c;
-		this.maxRollouts = maxRollouts;
-		gameStateEvaluator = evaluator;
+		public List<TAction> plan;
 
-		return MctsSearch(agent, state, iterations, OnIterationCompleted);
 	}
 
 
-	private TMove MctsSearch(TAgent agent, IMultiAgentGameState<TMove, TAgent> rootState, int iterations, Action<int> OnIterationCompleted=null)
+	public PlanResult GetPlan(
+		TAgent agent,
+		IMultiAgentGameState<TAction, TAgent> state,
+		IMultiAgentGameStateEvaluator<TAction, TAgent> evaluator,
+		Func<IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentPolicy,
+		Func<TAgent, TAgent, bool> isSameAgent,
+		int iterations = 50,
+		int maxRollouts = 30,
+		Action<int> OnIterationCompleted=null,
+		float cFactor = 1.4f)
 	{
+	
 		var random = new Random();
 
-		var root = new MCTSNode(agent, rootState.GetDuplicated(), gameStateEvaluator);
+		var root = new MCTSNode(state.GetDuplicated());
 
 		for (int i = 0; i < iterations; i++)
 		{
@@ -182,19 +183,30 @@ public class MultiAgentMCTS<TMove, TAgent>
 			// Expansion
 			if (!node.IsTerminal() && !node.IsFullyExpanded())
 			{
-				node = node.Expand(random);
+				node = node.Expand(random, agent, otherAgentPolicy, isSameAgent);
 			}
 
 			// Simulation
-			float value = node.Rollout(maxRollouts, random);
+			float value = node.Rollout(maxRollouts, evaluator, random, agent, otherAgentPolicy, isSameAgent);
 
 			// Backpropagation
 			node.Backpropagate(value);
 			OnIterationCompleted?.Invoke(i);
 		}
 
-		var best = root.Children.MaxBy(x => x.Visits);
+		var plan = new List<TAction>();
 
-		return best.Action;
+		var current = root;
+		while (current.Children.Count > 0)
+		{
+			var bestChild = current.Children.MaxBy(x => x.Visits);
+			plan.Add(bestChild.Action);
+			current = bestChild;
+		}
+
+		var res = new PlanResult();
+		res.plan = plan;
+
+		return res;
 	}	
 }

@@ -19,7 +19,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 		public List<TAction> plan;
 		public float bestScore;
 	}
-	public PlanResult getPlan(
+	public PlanResult GetPlan(
 		TAgent agent,
 		AI.IMultiAgentGameState<TAction, TAgent> state, 
 		AI.IMultiAgentGameStateEvaluator<TAction, TAgent> evaluator,
