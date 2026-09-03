@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using Godot;
 
 namespace AI;
 
@@ -17,7 +19,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 		public List<MCTSNode> Children { get; }
 
 		public int Visits { get; private set; }
-		public float Wins { get; private set; }
+		public float TotalValue { get; private set; }
 
 		private List<TAction> UntriedActions;
 
@@ -37,10 +39,10 @@ public class MultiAgentMCTS<TAction, TAgent>
 
 			Children = new List<MCTSNode>();
 
-			Visits = 0;
-			Wins = 0;
-
 			UntriedActions = state.GetAvailableMoves(state.GetCurrentExecutingAgent()).ToList();
+			Visits = 0;
+			TotalValue = 0;
+
 		}
 
 
@@ -61,6 +63,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 			Func<IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentPolicy,
 			Func<TAgent, TAgent, bool> isSameAgent)
 		{
+			Debug.Assert(isSameAgent(State.GetCurrentExecutingAgent(), agent));
 			int index = random.Next(UntriedActions.Count);
 
 			TAction action = UntriedActions[index];
@@ -73,6 +76,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 				newState.ExecuteMove(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
 			}
 
+			Debug.Assert(isSameAgent(newState.GetCurrentExecutingAgent(), agent));
 			var child = new MCTSNode(newState, this, action, Depth + 1);
 
 			Children.Add(child);
@@ -102,6 +106,8 @@ public class MultiAgentMCTS<TAction, TAgent>
 			Func<IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentPolicy,
 			Func<TAgent, TAgent, bool> isSameAgent)
 		{
+			
+			Debug.Assert(isSameAgent(State.GetCurrentExecutingAgent(), agent));
 			var newState = State.GetDuplicated();
 
 			for (int i = 0; i < maxRolloutDepth; i++)
@@ -109,27 +115,28 @@ public class MultiAgentMCTS<TAction, TAgent>
 				var moves = newState.GetAvailableMoves(newState.GetCurrentExecutingAgent());
 				var moveList = moves.ToList();
 
-				if (newState.IsOver() || moveList.Count == 0)
-				{
-					return evaluator.GetTerminationValue(newState, agent);
-				}
-
 				newState.ExecuteMove(moveList[random.Next(moveList.Count)]);
 				while(!isSameAgent(newState.GetCurrentExecutingAgent(), agent))
 				{
 					newState.ExecuteMove(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
 				}
 
-			}
+				Debug.Assert(isSameAgent(newState.GetCurrentExecutingAgent(), agent));
+				if (newState.IsOver() || moveList.Count == 0)
+				{
+					return evaluator.GetTerminationValue(newState, newState.GetCurrentExecutingAgent());
+				}
 
-			return evaluator.EvaluateState(newState, agent);
+			}
+			Debug.Assert(isSameAgent(newState.GetCurrentExecutingAgent(), agent));
+			return evaluator.EvaluateState(newState, newState.GetCurrentExecutingAgent());
 		}
 
 
 		public void Backpropagate(float value)
 		{
 			Visits++;
-			Wins += value;
+			TotalValue += value;
 
 			Parent?.Backpropagate(value);
 		}
@@ -137,7 +144,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 
 		private float Ucb(MCTSNode child, float c)
 		{
-			float exploit = child.Wins / child.Visits;
+			float exploit = child.TotalValue / child.Visits;
 
 			float explore =
 				c * MathF.Sqrt(
@@ -162,37 +169,62 @@ public class MultiAgentMCTS<TAction, TAgent>
 		Func<TAgent, TAgent, bool> isSameAgent,
 		int iterations = 50,
 		int maxRollouts = 30,
+		int maxExpansionDepth = 10,
 		Action<int> OnIterationCompleted=null,
-		float cFactor = 1.4f)
+		float cFactor = 1.4f
+		)
 	{
-	
+		
+		Debug.Assert(isSameAgent(state.GetCurrentExecutingAgent(), agent));
 		var random = new Random();
 
 		var root = new MCTSNode(state.GetDuplicated());
 
+		var iterationWatch = new System.Diagnostics.Stopwatch();
+		iterationWatch.Start(); 
 		for (int i = 0; i < iterations; i++)
 		{
 			var node = root;
+			var watch = new System.Diagnostics.Stopwatch();
 
 			// Selection
+			watch.Reset();
+			watch.Start();
 			while (!node.IsTerminal() && node.IsFullyExpanded())
 			{
 				node = node.BestChild(cFactor);
 			}
+			watch.Stop();
+//			GD.Print($"Selection Elapsed: {watch.ElapsedTicks}");
 
 			// Expansion
-			if (!node.IsTerminal() && !node.IsFullyExpanded())
+			watch.Reset();
+			watch.Start();
+			if (node.Depth < maxExpansionDepth && !node.IsTerminal() && !node.IsFullyExpanded())
 			{
 				node = node.Expand(random, agent, otherAgentPolicy, isSameAgent);
 			}
+			watch.Stop();
+//			GD.Print($"Expand Elapsed: {watch.ElapsedTicks}");
 
 			// Simulation
+			watch.Reset();
+			watch.Start();
 			float value = node.Rollout(maxRollouts, evaluator, random, agent, otherAgentPolicy, isSameAgent);
+			watch.Stop();
+//			GD.Print($"Rollout Elapsed: {watch.ElapsedTicks}");
 
 			// Backpropagation
+			watch.Reset();
+			watch.Start();
 			node.Backpropagate(value);
 			OnIterationCompleted?.Invoke(i);
+			watch.Stop();
+//			GD.Print($"Backpropagate Elapsed: {watch.ElapsedTicks}");
+
 		}
+		iterationWatch.Stop();
+		GD.Print($"Iterations Elapsed {iterationWatch.ElapsedTicks}");
 
 		var plan = new List<TAction>();
 
