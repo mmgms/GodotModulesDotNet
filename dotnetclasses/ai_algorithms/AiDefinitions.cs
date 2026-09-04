@@ -24,6 +24,12 @@ public interface IGameStateEvaluator<TMove>
     float GetTerminationValue(IGameState<TMove> gameState);
 }
 
+public class StateProbability<TMove, TAgent>
+{
+	public IMultiAgentGameState<TMove, TAgent> state;
+	public float probability;
+}
+
 public interface IMultiAgentGameState<TMove, TAgent> 
 {
 	
@@ -35,7 +41,8 @@ public interface IMultiAgentGameState<TMove, TAgent>
 
     IMultiAgentGameState<TMove, TAgent> GetNewStatePerMove(TMove move);
 
-    void ExecuteMove(TMove move);
+	IEnumerable<StateProbability<TMove, TAgent>> GetProbabilityStatesPerMove(TMove move);
+   void ExecuteMove(TMove move);
 
     bool IsOver();
 }

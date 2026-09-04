@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using DiskGame;
 using Godot;
 
 namespace AI;
@@ -10,6 +11,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 {
 	private class MCTSNode
 	{
+		public int Id {get; set;}
 		public int Depth { get; }
 
 		public IMultiAgentGameState<TAction, TAgent> State { get; }
@@ -21,6 +23,9 @@ public class MultiAgentMCTS<TAction, TAgent>
 		public int Visits { get; private set; }
 		public float TotalValue { get; private set; }
 
+		public float MaxValue { get; private set; }
+		public float MinValue { get; private set; }
+
 		private List<TAction> UntriedActions;
 
 
@@ -30,6 +35,8 @@ public class MultiAgentMCTS<TAction, TAgent>
 			TAction action = default,
 			int depth = 0)
 		{
+			MaxValue = float.NegativeInfinity;
+			MinValue = float.PositiveInfinity;
 			State = state;
 
 			Parent = parent;
@@ -92,9 +99,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 					return child;
 			}
 
-			return Children.MaxBy(
-				child => child.Ucb(this, c)
-			);
+			return Children.MaxBy(child => this.Ucb(child, c));
 
 		}
 
@@ -138,20 +143,27 @@ public class MultiAgentMCTS<TAction, TAgent>
 			Visits++;
 			TotalValue += value;
 
+			if (value > MaxValue)
+			{
+				MaxValue = value;
+			}
+
+			if (value < MinValue)
+			{
+				MinValue = value;
+			}
+
 			Parent?.Backpropagate(value);
 		}
 
 
-		private float Ucb(MCTSNode child, float c)
+		public float Ucb(MCTSNode child, float c)
 		{
 			float exploit = child.TotalValue / child.Visits;
 
-			float explore =
-				c * MathF.Sqrt(
-					MathF.Log(Visits) / child.Visits
-				);
-
-			return exploit + explore;
+			float explore = c * MathF.Sqrt(MathF.Log(Visits) / child.Visits);
+			float ucb = explore + exploit;
+			return ucb;
 		}
 	}
 	public class PlanResult
@@ -171,7 +183,9 @@ public class MultiAgentMCTS<TAction, TAgent>
 		int maxRollouts = 30,
 		int maxExpansionDepth = 10,
 		Action<int> OnIterationCompleted=null,
-		float cFactor = 1.4f
+		float cFactor = 1.4f,
+		float minScoreValue = -100,
+		float maxScoreValue = 100
 		)
 	{
 		
@@ -179,6 +193,9 @@ public class MultiAgentMCTS<TAction, TAgent>
 		var random = new Random();
 
 		var root = new MCTSNode(state.GetDuplicated());
+
+		var currentNodeId = 0;
+		root.Id = currentNodeId;
 
 		var iterationWatch = new System.Diagnostics.Stopwatch();
 		iterationWatch.Start(); 
@@ -192,18 +209,23 @@ public class MultiAgentMCTS<TAction, TAgent>
 			watch.Start();
 			while (!node.IsTerminal() && node.IsFullyExpanded())
 			{
-				node = node.BestChild(cFactor);
+				node = node.BestChild(cFactor);				
 			}
+
 			watch.Stop();
 //			GD.Print($"Selection Elapsed: {watch.ElapsedTicks}");
 
 			// Expansion
 			watch.Reset();
 			watch.Start();
-			if (node.Depth < maxExpansionDepth && !node.IsTerminal() && !node.IsFullyExpanded())
+			if (!node.IsTerminal() && !node.IsFullyExpanded())
 			{
 				node = node.Expand(random, agent, otherAgentPolicy, isSameAgent);
 			}
+
+			currentNodeId += 1;
+			node.Id = currentNodeId;
+			
 			watch.Stop();
 //			GD.Print($"Expand Elapsed: {watch.ElapsedTicks}");
 
@@ -211,12 +233,15 @@ public class MultiAgentMCTS<TAction, TAgent>
 			watch.Reset();
 			watch.Start();
 			float value = node.Rollout(maxRollouts, evaluator, random, agent, otherAgentPolicy, isSameAgent);
+
 			watch.Stop();
 //			GD.Print($"Rollout Elapsed: {watch.ElapsedTicks}");
 
 			// Backpropagation
 			watch.Reset();
 			watch.Start();
+
+			var remappedValue = MathUtils.Funtions.Remap(Math.Clamp(value, minScoreValue, maxScoreValue), minScoreValue, maxScoreValue, 0.0f, 1.0f);
 			node.Backpropagate(value);
 			OnIterationCompleted?.Invoke(i);
 			watch.Stop();
@@ -227,6 +252,11 @@ public class MultiAgentMCTS<TAction, TAgent>
 		GD.Print($"Iterations Elapsed {iterationWatch.ElapsedTicks}");
 
 		var plan = new List<TAction>();
+
+		foreach (var child in root.Children)
+		{
+			GD.Print($"Visits: {child.Visits}, TotalValue: {child.TotalValue}, AvgValue: {child.TotalValue/child.Visits}, MinValue {child.MinValue}, MaxValue {child.MaxValue}, UCB: {child.Ucb(root, cFactor)}");
+		}
 
 		var current = root;
 		while (current.Children.Count > 0)
