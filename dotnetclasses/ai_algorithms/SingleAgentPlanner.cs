@@ -42,7 +42,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 					info.bestMove = children.MaxBy((x) => x.value).action;
 				}
 				info.depthSearched = depthSearched;
-				info.value = value;
+				info.value = this.value;
 			}
 			if (type == NodeType.Chance)
 			{
