@@ -8,7 +8,7 @@ namespace AI;
 
 public class SingleAgentPlanner<TAction, TAgent>
 {
-	public enum NodeType {Maximizer, Chance}
+	public enum NodeType {Maximizer, Chance, ParameterExpansion}
 	public class SearchNode
 	{
 		public NodeType type;
@@ -53,6 +53,10 @@ public class SingleAgentPlanner<TAction, TAgent>
 				}
 				this.value = expectedValue;
 			}
+			if (type == NodeType.ParameterExpansion)
+			{
+				this.value = Math.Max(this.value, value);
+			}
 			
 			parent?.BackPropagate(this.value, depthSearched, heuristic);
 		}
@@ -76,9 +80,6 @@ public class SingleAgentPlanner<TAction, TAgent>
 		AI.IMultiAgentGameState<TAction, TAgent> state, 
 		AI.IMultiAgentGameStateEvaluator<TAction, TAgent> evaluator,
 		Func<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentsPolicy,
-		Func<TAgent, TAgent, bool> isSameAgent,
-		Func<TAction, TAction, bool> isSameAction,
-		Func<TAction, bool> isProbabilityAction,
 		IEqualityComparer<AI.IMultiAgentGameState<TAction, TAgent>> comparer,
 		int maxDepth, int maxIterations
 		)
@@ -88,20 +89,40 @@ public class SingleAgentPlanner<TAction, TAgent>
 		PlanResult plan = null;
 		foreach (var i in Enumerable.Range(1, maxDepth))
 		{
-			plan = GetPlan(agent, state, evaluator, otherAgentsPolicy, isSameAgent, isSameAction, isProbabilityAction, i, maxIterations, heuristic);
+			plan = GetPlan(agent, state, evaluator, otherAgentsPolicy, i, maxIterations, heuristic);
 		}
 		return plan;
 	}
 
+	// private IEnumerable<SearchNode> expandNodeParametrizedAction(Action<AI.IMultiAgentGameState<TAction, TAgent>> simulateState,
+	// 	 Stack<SearchNode> queue, Func<TAction, IEnumerable<TAction>> expandParametricAction, SearchNode current, TAction action)
+	// {
+	// 	var parameterNode = new SearchNode(NodeType.ParameterExpansion);
+	// 	parameterNode.depth = current.depth;
+	// 	parameterNode.action = action;
+	// 	parameterNode.parent = current;
+	// 	parameterNode.state = current.state;
+	// 	current.children.Add(parameterNode);
+
+	// 	foreach (var parametrizedAction in expandParametricAction(action))
+	// 	{
+	// 		var stateAfterParametrizedAction = current.state.GetNewStatePerMove(parametrizedAction);
+	// 		var maximizerNode = new SearchNode(NodeType.Maximizer);
+	// 		simulateState(stateAfterParametrizedAction);
+	// 		maximizerNode.state = stateAfterParametrizedAction;
+	// 		maximizerNode.depth = current.depth + 1;
+	// 		maximizerNode.action = action;
+	// 		maximizerNode.parent = parameterNode; 
+	// 		parameterNode.children.Add(maximizerNode);
+	// 		yield return maximizerNode;
+	// 	}		
+	// }
 
 	public PlanResult GetPlan(
 		TAgent agent,
 		AI.IMultiAgentGameState<TAction, TAgent> state, 
 		AI.IMultiAgentGameStateEvaluator<TAction, TAgent> evaluator,
 		Func<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentsPolicy,
-		Func<TAgent, TAgent, bool> isSameAgent,
-		Func<TAction, TAction, bool> isSameAction,
-		Func<TAction, bool> isProbabilityAction,
 		int maxDepth, int maxIterations,
 		Dictionary<AI.IMultiAgentGameState<TAction, TAgent>, SearchInfo> heuristic
 		)
@@ -131,7 +152,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 				continue;
 			}
 
-			var availableMoves = current.state.GetAvailableMoves(current.state.GetCurrentExecutingAgent()).ToList();
+			var availableMoves = current.state.GetAvailableActions(current.state.GetCurrentExecutingAgent()).ToList();
 
 			SearchInfo info = null;
 			if (heuristic.ContainsKey(current.state))
@@ -146,34 +167,62 @@ public class SingleAgentPlanner<TAction, TAgent>
 			// 	continue;
 			// }
 
-			if (info != null && info.bestMove != null)
-			{
-				availableMoves = availableMoves
-					.OrderByDescending(x => isSameAction(x, info.bestMove))
-					.ToList();				
-			}
+			// if (info != null && info.bestMove != null)
+			// {
+			// 	availableMoves = availableMoves
+			// 		.OrderByDescending(x => isSameAction(x, info.bestMove))
+			// 		.ToList();				
+			// }
 
 			foreach (var action in availableMoves)
 			{
-				if (isProbabilityAction(action))
-				{	
-					var statesInfoList =  current.state.GetProbabilityStatesPerMove(action).ToList();
+				if (current.state.IsParametricAction(action))
+				{
+					var parameterNode = new SearchNode(NodeType.ParameterExpansion);
+					parameterNode.depth = current.depth;
+					parameterNode.action = action;
+					parameterNode.parent = current;
+					parameterNode.state = current.state;
+					current.children.Add(parameterNode);
 
+					foreach (var parametrizedAction in current.state.ExpandParametricAction(action))
+					{
+						var stateAfterParametrizedAction = current.state.GetNewStatePerMove(parametrizedAction);
+						var maximizerNode = new SearchNode(NodeType.Maximizer);
+						SimulateStateUntilAgent(agent, stateAfterParametrizedAction, otherAgentsPolicy, current.state.IsSameAgent);
+						maximizerNode.state = stateAfterParametrizedAction;
+						maximizerNode.depth = current.depth + 1;
+						maximizerNode.action = action;
+						maximizerNode.parent = parameterNode; 
+						parameterNode.children.Add(maximizerNode);
+						queue.Push(maximizerNode);		
+					}
+					continue;	
+				}
+
+				if (current.state.IsProbabilityAction(action))
+				{	
+
+					var effects =  current.state.GetProbabilityEffectsPerAction(action).ToList();
+					var newStateProb = current.state.GetNewStatePerMove(action);
 					var chanceNode = new SearchNode(NodeType.Chance);
-					chanceNode.childrenProbabilities = statesInfoList.Select((x) => x.probability).ToList();
+					chanceNode.childrenProbabilities = effects.Select((x) => x.probability).ToList();
 					chanceNode.depth = current.depth;
 					chanceNode.action = action;
 					chanceNode.parent = current;
+					chanceNode.state = newStateProb;
 					current.children.Add(chanceNode);
 
-					foreach (var newStateInfo in statesInfoList)
+					foreach (var effect in effects)
 					{
 						var maximizerNode = new SearchNode(NodeType.Maximizer);
-						SimulateStateUntilAgent(agent, newStateInfo.state, otherAgentsPolicy, isSameAgent);
-						maximizerNode.state = newStateInfo.state;
+						var newStateAfterEffect = newStateProb.GetDuplicated();
+						effect.Callback(newStateAfterEffect, action);
+						SimulateStateUntilAgent(agent, newStateAfterEffect, otherAgentsPolicy, current.state.IsSameAgent);
 						maximizerNode.depth = current.depth + 1;
 						maximizerNode.action = action;
 						maximizerNode.parent = chanceNode; 
+						maximizerNode.state = newStateAfterEffect;
 						chanceNode.children.Add(maximizerNode);
 						queue.Push(maximizerNode);		
 					}
@@ -181,7 +230,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 				}
 				// expand with other policy until its our turn again
 				var newState = current.state.GetNewStatePerMove(action);
-				SimulateStateUntilAgent(agent, newState, otherAgentsPolicy, isSameAgent);
+				SimulateStateUntilAgent(agent, newState, otherAgentsPolicy, current.state.IsSameAgent);
 				var newNode = new SearchNode(NodeType.Maximizer);
 				newNode.state = newState;
 				newNode.depth = current.depth + 1;
@@ -216,7 +265,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 	{
 		while (!isSameAgent(state.GetCurrentExecutingAgent(), agent))
 		{
-			state.ExecuteMove(otherAgentsPolicy(state, state.GetCurrentExecutingAgent()));
+			state.ExecuteAction(otherAgentsPolicy(state, state.GetCurrentExecutingAgent()));
 		}
 	}
 }

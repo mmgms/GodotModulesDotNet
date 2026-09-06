@@ -36,9 +36,9 @@ class WesternTownSimulation
 		mcts = new AI.MultiAgentMCTS<GameState.CharacterAction, CharacterInfo>();
 
 		gameState = new GameState();
+		ActionsDefinitions.fillActionList(gameState);
 
 		gameState.OnTurnCompleted += refillCharacters;
-
 
 		FoodData = new ItemData
         {
@@ -89,7 +89,7 @@ class WesternTownSimulation
                 Definitions.CharacterType.Miner)
                 .SetGold(10)
 				.SetHunger(7)
-				.AddItemAmount(FoodData, 1)
+				.AddItem(FoodData, 1)
                 .SetPlace(Definitions.PlaceType.Thuroughfare);
         }
 
@@ -107,8 +107,8 @@ class WesternTownSimulation
             Definitions.CharacterType.SaloonOwner)
             .SetGold(10)
             .SetPlace(Definitions.PlaceType.Saloon)
-			.AddItemAmount(PickaxeData, 3)
-            .AddItemAmount(FoodData, 10);
+			.AddItem(PickaxeData, 3)
+            .AddItem(FoodData, 10);
 
         // gameState.AddCharacter(
         //     PopName(nameList),
@@ -128,7 +128,7 @@ class WesternTownSimulation
 				.SetHunger(7)
                 .SetPlace(Definitions.PlaceType.Road)
                 .AddItem(GunData)
-				.AddItemAmount(AmmoData, 10);
+				.AddItem(AmmoData, 10);
         }
 	}
 
@@ -140,19 +140,23 @@ class WesternTownSimulation
         return name;
     }
 
-	private GameState.CharacterAction getNullAction(CharacterInfo characterInfo)
+	private GameState.CharacterActionExecution getNullAction(CharacterInfo characterInfo)
 	{
-			var action = new GameState.CharacterAction(characterInfo);
-			action.Description = "Empty Policy";
-			action.Callback = (state) => {};
-			return action;
+		var action = new GameState.CharacterActionExecution
+		{
+			ActionType = GameState.ActionType.DoNothing,
+			InitiatorId = characterInfo.Id
+
+		};
+		
+		return action;
 		
 	}
 
 	public class BestActionResults
 	{
-		public GameState.CharacterAction action;
-		public List<GameState.CharacterAction> plan;
+		public GameState.CharacterActionExecution action;
+		public List<GameState.CharacterActionExecution> plan;
 		public float bestScore;
 	}
 
@@ -160,47 +164,40 @@ class WesternTownSimulation
 	{
 		CharacterInfo characterToExecute = gameState.getCharacterToProcess();
 		var res =  new BestActionResults();
-		res.plan = new List<GameState.CharacterAction>();
+		res.plan = new List<GameState.CharacterActionExecution>();
+
+
+		Func<WGameState, short, GameState.CharacterActionExecution> otherAgentPolicy = (gameState, id) =>
+			{	
+				var action = getNullAction(characterToExecute); 
+				var useItemActions = gameState.gameState.getAvailableActions(id).Where(x => x.ActionType == GameState.ActionType.UseItemOnSelf).ToList();
+				if (useItemActions.Count > 0)
+				{
+					var eatActions = gameState.ExpandParametricAction(useItemActions.First()).ToList();
+					if (eatActions.Count > 0)
+					{
+						action = eatActions.First();
+					}
+				}
+				
+				return action;
+
+			};
+
 		if (characterToExecute.Type == Definitions.CharacterType.SaloonOwner)
 		{
-			var availableActions = gameState.GetActionPerCharacter(characterToExecute).Where((x) => x.Type == GameState.ActionType.Eat).ToList();
-
-			if (availableActions.Count > 0)
-			{
-				res.action = availableActions[0];
-				return res;
-			}
-
-			res.action = getNullAction(characterToExecute); 
+			res.action = otherAgentPolicy(new WGameState(gameState), characterToExecute.Id);
 			return res;
 		}
-
-
-
-		Func<AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo>, CharacterInfo, GameState.CharacterAction> otherAgentPolicy = (gameState, character) =>
-			{	
-
-				var availableActions = gameState.GetAvailableMoves(character).Where((x) => x.Type == GameState.ActionType.Eat).ToList();
-				
-				if (availableActions.Count > 0)
-				{
-					return availableActions[0];
-				}
-				return getNullAction(character);
-			} ;
 		
-		Func<CharacterInfo, CharacterInfo, bool> isSameAgent = (cha, chb) => cha.Id == chb.Id; 
-		Func<GameState.CharacterAction, GameState.CharacterAction, bool> isSameAction = (a, b) => a.Id == b.Id;
+		Func<short, short, bool> isSameAgent = (a, b) => a == b; 
+		Func<GameState.CharacterAction, GameState.CharacterAction, bool> isSameAction = (a, b) => a.Type == b.Type;
 
 		if (!useMcts)
 		{
-			
-			var planner = new AI.SingleAgentPlanner<GameState.CharacterAction, CharacterInfo>();
-			var planRes = planner.GetIterativeDeepeningPlan(characterToExecute, new WGameState(gameState), new WEvaluator(),
-				otherAgentPolicy,
-				isSameAgent,
-				isSameAction,
-				(action) => action.IsProbabilityAction,
+			var planner = new AI.SingleAgentPlanner<GameState.CharacterActionExecution, short>();
+			var planRes = planner.GetIterativeDeepeningPlan(characterToExecute.Id, new WGameState(gameState), new WEvaluator(),
+				(Func<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>, short, GameState.CharacterActionExecution>)otherAgentPolicy,
 				new WGameStateComparer(),
 				maxExplorationDepth,
 				maxIterations
@@ -211,10 +208,9 @@ class WesternTownSimulation
 		}
 		else
 		{
-			var mcts = new AI.MultiAgentMCTS<GameState.CharacterAction, CharacterInfo>();
-			var planRes = mcts.GetPlan(characterToExecute, new WGameState(gameState), new WEvaluator(), 
-				otherAgentPolicy, 
-				isSameAgent, 
+			var mcts = new AI.MultiAgentMCTS<GameState.CharacterActionExecution, short>();
+			var planRes = mcts.GetPlan(characterToExecute.Id, new WGameState(gameState), new WEvaluator(),
+				(Func<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>, short, GameState.CharacterActionExecution>)otherAgentPolicy, 
 				maxMCTSIterations, 
 				maxRolloutDepth,
 				maxMCTSEspansionDepth,
@@ -226,7 +222,7 @@ class WesternTownSimulation
 		}
 
 		
-		if (res.plan.Count == 0 || res.plan[0] == null)
+		if (res.plan.Count == 0)
 		{
 			res.action = getNullAction(characterToExecute); 
 			return res;
@@ -254,7 +250,7 @@ class WesternTownSimulation
             if (character.Type == Definitions.CharacterType.SaloonOwner)
             {
                 if (gameState.CurrentTurn % TurnsToRefillItem[FoodData] == 0)
-                    character.AddItemAmount(FoodData, 10);
+                    character.AddItem(FoodData, 10);
             }
 
             if (character.Type == Definitions.CharacterType.ShopOwner)
@@ -270,15 +266,15 @@ class WesternTownSimulation
 
 				if (gameState.CurrentTurn % TurnsToRefillItem[AmmoData] == 0)
                 {
-					character.AddItemAmount(AmmoData, 10);
+					character.AddItem(AmmoData, 1);
                 }
             }
 		}
 	}
 
-	public class WGameStateComparer: IEqualityComparer<AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo>>
+	public class WGameStateComparer: IEqualityComparer<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>>
 	{
-		public bool Equals(AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo> x, AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo> y)
+		public bool Equals(AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> x, AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> y)
 		{
 			if (ReferenceEquals(x, y))
 				return true;
@@ -292,89 +288,105 @@ class WesternTownSimulation
 			return gameStateX.gameState.Equals(gameStateY.gameState);
 		}
 
-		public int GetHashCode(AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo> obj)
+		public int GetHashCode(AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> obj)
 		{
 			var state = (WGameState)obj;
 			return state.gameState.GetHash();
 		}
 	}
 
-	public class WGameState: AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo>
+	public class WGameState: AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>
 	{
-		
 		public GameState gameState;
 		public WGameState(GameState state)
 		{
 			this.gameState = state;
 		}
 
-		public CharacterInfo GetCurrentExecutingAgent()
+		public short GetCurrentExecutingAgent()
 		{
-			return gameState.getCharacterToProcess();
+			return gameState.CurrentCharacterToProcess;
 		}
 
-		public AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo> GetDuplicated()
+		public AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> GetDuplicated()
 		{
 			var new_state = new WGameState(this.gameState.getDuplicated());
 			return new_state;
 		}
 
-		public IEnumerable<GameState.CharacterAction> GetAvailableMoves(CharacterInfo agent)
+		public IEnumerable<GameState.CharacterActionExecution> GetAvailableActions(short id)
 		{
-			return gameState.GetActionPerCharacter(agent);
+			return gameState.getAvailableActions(id);
 		}
 
-		public AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo> GetNewStatePerMove(GameState.CharacterAction move)
+		public AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> GetNewStatePerMove(GameState.CharacterActionExecution action)
 		{
 			var newState = this.GetDuplicated();
-			newState.ExecuteMove(move);
+			newState.ExecuteAction(action);
 
 			return newState;
 		}
 
-		public IEnumerable<AI.StateProbability<GameState.CharacterAction, CharacterInfo>> GetProbabilityStatesPerMove(GameState.CharacterAction move)
+		public IEnumerable<AI.ProabilityEffect<GameState.CharacterActionExecution, short>> GetProbabilityEffectsPerAction(GameState.CharacterActionExecution action)
 		{
-			Debug.Assert(move.IsProbabilityAction);
-			var listOfStates = new List<AI.StateProbability<GameState.CharacterAction, CharacterInfo>>();
-
-			foreach (var effect in move.ProbabilityEffects)
+			Debug.Assert(IsProbabilityAction(action));
+			
+			foreach (var effect in gameState.getActionBytype(action.ActionType).ProbabilityEffects)
 			{
-				var stateProbability = new AI.StateProbability<GameState.CharacterAction, CharacterInfo>();
-				WGameState newState = (WGameState)this.GetDuplicated();
-				newState.gameState.executeAction(move, effect);
-				stateProbability.state = newState;
-				stateProbability.probability = effect.Probability;
-				listOfStates.Add(stateProbability);
+				var probabilityEffect = new AI.ProabilityEffect<GameState.CharacterActionExecution, short>();
+				
+				probabilityEffect.probability = effect.Probability;
+				probabilityEffect.Callback = (Action<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>, GameState.CharacterActionExecution>)effect.Callback;
+				yield return probabilityEffect;
 			}
-
-			return listOfStates;
 		}
 
-		public int GetHash()
+		public void ExecuteAction(GameState.CharacterActionExecution action)
 		{
-			return gameState.GetHash(); 
-		}
-
-		public void ExecuteMove(GameState.CharacterAction move)
-		{
-			gameState.executeAction(move);
+			gameState.executeAction(action, false);
 		}
 
 		public bool IsOver()
 		{
 			return false;
 		}
+
+		public IEnumerable<GameState.CharacterActionExecution> ExpandParametricAction(GameState.CharacterActionExecution action)
+		{
+			return gameState.expandActionParameter(action);
+		}
+
+		public bool IsProbabilityAction(GameState.CharacterActionExecution action)
+		{
+			return gameState.getActionBytype(action.ActionType).IsProbabilityAction;
+		}
+
+		
+		public bool IsParametricAction(GameState.CharacterActionExecution action)
+		{
+			return gameState.getActionBytype(action.ActionType).IsParametricAction;
+		}
+
+		public bool IsSameAction(GameState.CharacterActionExecution a, GameState.CharacterActionExecution b)
+		{
+			return a.ActionType == b.ActionType;
+		}
+
+		public bool IsSameAgent(short ida, short idb)
+		{
+			return ida == idb;
+		}
 			
 	}
 
-	public class WEvaluator: AI.IMultiAgentGameStateEvaluator<GameState.CharacterAction, CharacterInfo>
+	public class WEvaluator: AI.IMultiAgentGameStateEvaluator<GameState.CharacterActionExecution, short>
 	{
-		public float EvaluateState(AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo> state, CharacterInfo characterToEvaluate)
+		public float EvaluateState(AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> state, short id)
 		{
 
 			GameState gameState = ((WGameState)state).gameState;
 
-			var character = gameState.getCharacterById(characterToEvaluate.Id);
+			var character = gameState.getCharacterById(id);
 		
 			if (character.isDead())
 				return -1000;//float.NegativeInfinity;
@@ -407,7 +419,7 @@ class WesternTownSimulation
 			return 0;
 		}
 
-    	public float GetTerminationValue(AI.IMultiAgentGameState<GameState.CharacterAction, CharacterInfo> gameState, CharacterInfo agent)
+    	public float GetTerminationValue(AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> gameState, short agent)
 		{
 			return 0.0f;
 		}

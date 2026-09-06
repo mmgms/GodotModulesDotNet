@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace AI;
@@ -24,26 +25,31 @@ public interface IGameStateEvaluator<TMove>
     float GetTerminationValue(IGameState<TMove> gameState);
 }
 
-public class StateProbability<TMove, TAgent>
+public class ProabilityEffect<TAction, TAgent>
 {
-	public IMultiAgentGameState<TMove, TAgent> state;
+	public Action<IMultiAgentGameState<TAction, TAgent>, TAction> Callback;
 	public float probability;
 }
 
-public interface IMultiAgentGameState<TMove, TAgent> 
+public interface IMultiAgentGameState<TAction, TAgent> 
 {
-	
+
 	TAgent GetCurrentExecutingAgent();
 
-    IMultiAgentGameState<TMove, TAgent> GetDuplicated();
+    IMultiAgentGameState<TAction, TAgent> GetDuplicated();
 
-    IEnumerable<TMove> GetAvailableMoves(TAgent agent);
+    IEnumerable<TAction> GetAvailableActions(TAgent agent);
 
-    IMultiAgentGameState<TMove, TAgent> GetNewStatePerMove(TMove move);
+    IMultiAgentGameState<TAction, TAgent> GetNewStatePerMove(TAction move);
 
-	IEnumerable<StateProbability<TMove, TAgent>> GetProbabilityStatesPerMove(TMove move);
-   void ExecuteMove(TMove move);
+	IEnumerable<ProabilityEffect<TAction, TAgent>> GetProbabilityEffectsPerAction(TAction move);
+   	void ExecuteAction(TAction move);
+	bool IsSameAction(TAction a, TAction b);
+	bool IsSameAgent(TAgent a, TAgent b);
+	IEnumerable<TAction> ExpandParametricAction(TAction action);
 
+	bool IsProbabilityAction(TAction action);
+	bool IsParametricAction(TAction action);
     bool IsOver();
 }
 

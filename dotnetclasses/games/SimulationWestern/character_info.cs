@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
 namespace WesternSimGame;
 
@@ -8,16 +10,18 @@ public class CharacterInfo
 	public delegate void StatsChangedEvent();	
 	public event StatsChangedEvent OnStatsChanged;
 
-	public int Id { get; set; }
+	public short Id { get; set; }
     public string Name { get; set;}
 
     public Definitions.CharacterType Type { get; set; }
-    private int Hp;//10x2x100x10x[]
+    private int Hp;
     private bool Dead;
     private int Hunger;
     private int Gold;
     private Definitions.PlaceType CurrentPlace;
-    private List<ItemInfo> Inventory = new();
+
+	private const int MAX_INVENTORY_SIZE = 5;
+    private ItemSlotInfo[] Inventory = new ItemSlotInfo[MAX_INVENTORY_SIZE];
 
     private bool HasReceivedRequest;
     private bool HasSentRequest;
@@ -55,7 +59,7 @@ public class CharacterInfo
 			CharacterAimedId = CharacterAimedId
 		};
 
-		Inventory.ForEach(x => newCharacter.Inventory.Add(x.getDuplicated()));
+		Inventory.CopyTo(newCharacter.Inventory, 0);
 
 		return newCharacter;
 	}
@@ -230,21 +234,21 @@ public class CharacterInfo
 		OnStatsChanged?.Invoke();
     }
 
-    public void ReduceHp()
+    public void ReduceHp(int amount=1)
     {
-        Hp = Math.Clamp(Hp - 1, 0, MaxHp);
+        Hp = Math.Clamp(Hp - amount, 0, MaxHp);
 		OnStatsChanged?.Invoke();
     }
 
-    public void IncreaseHp()
+    public void IncreaseHp(int amount=1)
     {
-        Hp = Math.Clamp(Hp + 1, 0, MaxHp);
+        Hp = Math.Clamp(Hp + amount, 0, MaxHp);
 		OnStatsChanged?.Invoke();
     }
 
     public bool HasItem(Definitions.ItemType type)
     {
-        foreach (ItemInfo item in Inventory)
+        foreach (ItemSlotInfo item in Inventory)
         {
             if (item.ItemData.Type == type)
                 return true;
@@ -253,78 +257,120 @@ public class CharacterInfo
         return false;
     }
 
-    public ItemInfo GetItemOfType(Definitions.ItemType type)
+    public int GetIndexForType(Definitions.ItemType type)
     {
-        foreach (ItemInfo item in Inventory)
+        for (int i = 0; i < Inventory.Length; i++)
         {
-            if (item.ItemData.Type == type)
-                return item;
+			var itemSlot = Inventory[i];
+			if (!itemSlot.used)
+			{
+				continue;
+			}
+            if (itemSlot.ItemData.Type == type)
+                return i;
         }
 
-        return null;
+        return -1;
     }
 
-	public ItemInfo GetItemAt(int index)
+	public IEnumerable<Definitions.ItemType> getAllTypes()
+	{
+		for (int i = 0; i < Inventory.Length; i++)
+		{
+			var itemSlot = Inventory[i];
+
+			if (itemSlot.used)
+			{
+				yield return itemSlot.ItemData.Type;
+			}
+		}
+	}
+
+	public ItemSlotInfo GetItemAt(int index)
 	{
 		return Inventory[index];
 	}
 
-    public void RemoveItem(ItemInfo item)
-    {
-        Inventory.Remove(item);
-		OnStatsChanged?.Invoke();
-    }
+
+	public int GetItemTurnsUsed(int index)
+	{
+		return Inventory[index].TurnsUsed;
+	}
+
+	
+	public void IncreseItemTurnUsed(int index)
+	{	
+		var item  = Inventory[index];
+		Inventory[index] = item with {TurnsUsed = item.TurnsUsed +1};
+	}
+	
+	
+	public void IncreseItemTurnUsedAndRemoveOnEmpty(int index)
+	{	
+		var item  = Inventory[index];
+		IncreseItemTurnUsed(index);
+		if (GetItemTurnsUsed(index) > item.ItemData.MaxUses)
+		{
+			Inventory[index].TurnsUsed = 0;
+			RemoveItem(index);
+		}
+	}
+	public void SetItemAt(int index, ItemSlotInfo info)
+	{
+		Inventory[index] = info; 
+	}
 
 	public void RemoveItem(int index)
     {
-        Inventory.RemoveAt(index);
+		Debug.Assert(Inventory[index].used);
+		Inventory[index].used =false;
+
 		OnStatsChanged?.Invoke();
     }
 
-    public CharacterInfo AddItem(ItemData itemData)
+    public CharacterInfo AddItem(ItemData itemData, int amount=1)
     {
-        ItemInfo itemInfo = new()
-        {
-            ItemData = itemData
-        };
+		foreach (var j in Enumerable.Range(0, amount))
+		{
+			
+			var idxToAdd = -1;
+			for (int i = 0; i < Inventory.Length; i++)
+			{
+				var itemSlot = Inventory[i];
+				if (!itemSlot.used)
+				{
+					idxToAdd = i;
+					break;
+				}
+			}
+		
+			if (idxToAdd >= 0)
+			{
+				var itemSlot = Inventory[idxToAdd];
+				Inventory[idxToAdd] = itemSlot with {used = true, ItemData = itemData};
+				OnStatsChanged?.Invoke();
+			}
+		}
 
-        Inventory.Add(itemInfo);
-		OnStatsChanged?.Invoke();
         return this;
     }
 
-    public CharacterInfo AddItemAmount(ItemData itemData, int amount)
-    {
-        for (int i = 0; i < amount; i++)
-        {
-            AddItem(itemData);
-        }
-
-        return this;
-    }
-
-    public List<ItemInfo> GetAllItems()
+    public IEnumerable<ItemSlotInfo> GetAllItems()
     {
         return Inventory;
     }
 
-	
-    public List<ItemData> GetAllItemData()
+	public void AddItemList(IEnumerable<ItemSlotInfo> items)
     {
-		var types = new List<ItemData>();
-		Inventory.ForEach((x) =>
-		{
-			if (!types.Contains(x.ItemData))
-			{
-				types.Add(x.ItemData);
-			}
-		});
-        return types;
-    }
 
-	public void AddItemList(List<ItemInfo> items)
-    {
-        Inventory.AddRange(items);
+		foreach (var itemSlot in items)
+		{
+			if (!itemSlot.used)
+			{
+				continue;
+			}
+			AddItem(itemSlot.ItemData);
+		}
 		OnStatsChanged?.Invoke();
     }
 }

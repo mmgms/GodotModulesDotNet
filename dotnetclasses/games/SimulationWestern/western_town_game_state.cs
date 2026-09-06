@@ -1,56 +1,97 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
 namespace WesternSimGame;
 
 public class GameState
 {
+	private const int MAX_ACTIONS = 20;
+	private const int MAX_PARAMETER_VALUES = 10; 
+	private const int MAX_REQUESTS = 10;
+	private const int MAX_PROBABILITY_EFFECTS = 10;
     public int CurrentTurn { get; set; }
-	public int CurrentCharacterToProcess { get; set; }
+	public short CurrentCharacterToProcess { get; set; }
 
     public List<CharacterInfo> Characters { get; } = new();
 
+
 	public int CurrentRequestId { get; set; }
 
-	public Dictionary<int, RequestInfo> Requests { get; } = new();
+	public RequestInfo[] Requests { get; } = new RequestInfo[MAX_REQUESTS];
+	public CharacterAction[] availableActions = new CharacterAction[MAX_ACTIONS];
 
     public Dictionary<Definitions.PlaceType, List<Definitions.PlaceType>> PlacesGraph { get; set; } = new();
 
     public enum ActionType
-    {
-        Unclassified,
-		Move,
-        Shoot,
-		Eat
+    { 
+		Unclassified, DoNothing, AcceptRequest, RefuseRequest, ProcessRequest, Move, UseItemOnSelf, Shoot, Holster, AimAt, MugRequest, Mine, Loot, BuyItem
     }
 
-	public class ProbabilityActionEffect
+	public struct ProbabilityActionEffect
 	{
 		public float Probability;
-		public  System.Action<GameState> Callback { get; set; }
+		public  Action<GameState, CharacterActionExecution> Callback { get; set; }
 	}
-
-    public class CharacterAction
+    public struct CharacterAction
     {
-		public int Id {get; set;}
         public string Description { get; set; }
-        public CharacterInfo Initiator { get; set; }
-        public CharacterInfo Recipient { get; set; }
-		public Definitions.PlaceType Place {get; set;}
         public ActionType Type { get; set; }
-        public System.Action<GameState> Callback { get; set; }
-
+		public Func<GameState, CharacterActionExecution, bool> Precondition {get; set;}
+        public Action<GameState, CharacterActionExecution> Callback { get; set; }
+		
+		public Func<GameState, CharacterActionExecution, IEnumerable<Definitions.PlaceType>> GetPlaceTypePossibleValues;
+		public Func<GameState, CharacterActionExecution, IEnumerable<short>> GetOtherCharacterIdPossibleValues;
+		public Func<GameState, CharacterActionExecution, IEnumerable<Definitions.ItemType>> GetItemTypePossibleValues;
 
 		public bool IsProbabilityAction;
+		public bool IsParametricAction;
 
-		public List<ProbabilityActionEffect> ProbabilityEffects;
+		public ProbabilityActionEffect[] ProbabilityEffects = new ProbabilityActionEffect[MAX_PROBABILITY_EFFECTS];
 
-        public CharacterAction(CharacterInfo initiator)
-        {
-            Initiator = initiator;
-        }
+		public CharacterAction()
+		{
+			GetItemTypePossibleValues = (state, execution) => {return EmptyItemEnumerable();};
+			GetPlaceTypePossibleValues = (state, execution) => {return EmptyPlaceEnumerable();};
+			GetOtherCharacterIdPossibleValues = (state, execution) => {return EmptyIdEnumerable();};
+
+		}
 
     }
+	static public IEnumerable<Definitions.PlaceType> EmptyPlaceEnumerable()
+	{
+		yield return Definitions.PlaceType.Unclassified;
+	}
+
+	static public IEnumerable<Definitions.ItemType> EmptyItemEnumerable()
+	{
+		yield return Definitions.ItemType.Unclassified;
+	}
+
+	static public IEnumerable<short> EmptyIdEnumerable()
+	{
+		yield return -1;
+	}
+	public struct CharacterActionExecution
+	{
+        public int InitiatorId { get; set; }
+		public ActionType ActionType {get; set;}
+		public Definitions.ItemType itemType;
+		public Definitions.PlaceType placeType;
+		public short otherCharacterId = -1;
+
+		public CharacterActionExecution()
+		{
+			
+		}
+	}
+
+	public CharacterAction getActionBytype(ActionType type)
+	{
+		return availableActions[(int) type];
+	}
 
 
     public double ProbabilityOfMiningGold { get; set; } = 0.1;
@@ -60,7 +101,7 @@ public class GameState
 
 	public event EndTurn OnTurnCompleted;
 
-	public delegate void ActionExecuted(CharacterAction action);
+	public delegate void ActionExecuted(CharacterActionExecution action);
 	public event ActionExecuted OnActionExecuted;
 
 	public delegate void TurnUpdate(int turn);
@@ -77,12 +118,19 @@ public class GameState
 
     public GameState()
     {
-
     }
 
 	public CharacterInfo getCharacterById(int id)
 	{
 		return Characters[id];
+	}
+
+	public string GetActionDescription(CharacterActionExecution action)
+	{
+		var itemDesc = action.itemType != Definitions.ItemType.Unclassified ? action.itemType.ToString() : "";
+		var otherCharacter = action.otherCharacterId >= 0 ? getCharacterById(action.otherCharacterId).getNameAndType() : "";
+		var placeDesc = action.placeType != Definitions.PlaceType.Unclassified ? action.placeType.ToString() : "";
+		return $"{action.ActionType}({itemDesc}, {otherCharacter}, {placeDesc})";
 	}
 
 	public GameState getDuplicated()
@@ -95,14 +143,9 @@ public class GameState
 		new_state.CurrentTurn = this.CurrentTurn;
 		new_state.CurrentRequestId = this.CurrentRequestId;
 
-		foreach(var item in Requests)
-		{
-			new_state.Requests[item.Key] = item.Value.getDuplicated();
-		}
-		
-		foreach (var item in PlacesGraph){
-			new_state.PlacesGraph[item.Key] = item.Value;
-		}
+		this.Requests.CopyTo(new_state.Requests, 0);
+		this.availableActions.CopyTo(new_state.availableActions, 0);
+		new_state.PlacesGraph = this.PlacesGraph;
 
 		return new_state;
 	}
@@ -146,7 +189,7 @@ public class GameState
         };
 
         Characters.Add(character);
-		character.Id = Characters.Count - 1;
+		character.Id = (short)(Characters.Count - 1);
         return character;
     }
 
@@ -171,19 +214,19 @@ public class GameState
     {
         toCharacter.IncreaseGold(other.getGold());
         toCharacter.AddItemList(other.GetAllItems());
+		foreach (var item in other.GetAllItems())
+		{
+			other.RemoveItem(other.GetIndexForType(item.ItemData.Type));
+		}
     }
 
-    public List<CharacterInfo> GetCharactersInPlace(Definitions.PlaceType place)
+    public IEnumerable<CharacterInfo> GetCharactersInPlace(Definitions.PlaceType place)
     {
-        var result = new List<CharacterInfo>();
-
         foreach (var character in Characters)
         {
             if (character.getCurrentPlace() == place)
-                result.Add(character);
+                yield return character;
         }
-
-        return result;
     }
 
     public List<Definitions.PlaceType> GetPlaceNeighbours(Definitions.PlaceType place)
@@ -199,478 +242,147 @@ public class GameState
 		return Requests[id];
 	}
 
-    public List<CharacterAction> GetActionPerCharacter(CharacterInfo character)
-    {
-        var actions = new List<CharacterAction>();
+	public void setRequestAtIndex(int id, RequestInfo info)
+	{
+		Requests[id] = info;
+	}
 
-		var nullAction = new CharacterAction(character);
-		nullAction.Callback = (state) => {return;};
-		nullAction.Description = "Do nothing";
+	public int getFirstFreeRequestInfoSlotIndex()
+	{
+		var idx = -1;
 
-		actions.Add(nullAction);
+		for (int i=0; i < Requests.Length; i++)
+		{
+			if (Requests[i].Status == RequestInfo.RequestStatus.Unused)
+			{
+				return i;
+			}
+		}
+		return idx;
+	}
 
+	public void SetRequestStatus(int id, RequestInfo.RequestStatus status)
+	{
+		Requests[id] = Requests[id] with {Status = status};
+	}
+
+	public void addAction(CharacterAction action)
+	{
+		availableActions[(int)action.Type] = action;
+	}
+	public IEnumerable<CharacterActionExecution> getAvailableActions(short characterId)
+	{
+		var character = getCharacterById(characterId);
 		if (character.isDead())
 		{
-			return actions;
+			var execution = new CharacterActionExecution
+			{
+				InitiatorId = characterId,
+				ActionType = ActionType.DoNothing
+			};
+			yield return execution;
+			yield break;
 		}
 
-		var characterId = character.Id;
-
-        if (character.GetHasReceivedRequest())
-        {
-            var refuseRequest = new CharacterAction(character)
-            {
-                Description =
-                    $"Refuse Request: {getRequestInfoById(character.getCurrentRequestId()).GetDescription()}",
-                Callback = (state) => {
-					var character = state.getCharacterById(characterId);
-					state.getRequestInfoById(character.getCurrentRequestId()).Status = RequestInfo.RequestStatus.Refused;
-					character.RefuseRequest();
-					}
-            };
-
-            var acceptRequest = new CharacterAction(character)
-            {
-                Description =
-                    $"Accept Request: {getRequestInfoById(character.getCurrentRequestId()).GetDescription()}",
-                Callback = (state) => {
-					var character = state.getCharacterById(characterId);
-					state.getRequestInfoById(character.getCurrentRequestId()).Status = RequestInfo.RequestStatus.Accepted;
-					character.AcceptRequest();
-					}
-            };
-
-            actions.Add(refuseRequest);
-            actions.Add(acceptRequest);
-
-            return actions;
-        }
-
-        if (character.GetHasSentRequest())
-        {
-            var processRequest = new CharacterAction(character)
-            {
-                Description = $"Processing Request: {getRequestInfoById(character.getCurrentRequestId()).GetDescription()}",
-                Callback = (state) => 
-					{
-						var character = state.getCharacterById(characterId);
-						var CurrentRequest = state.getRequestInfoById(character.getCurrentRequestId());
-						if (CurrentRequest.Status == RequestInfo.RequestStatus.Accepted)
-						{
-							CurrentRequest.CallbackAccepted?.Invoke(state);
-						}
-						else if (CurrentRequest.Status == RequestInfo.RequestStatus.Refused)
-						{
-							CurrentRequest.CallbackRefused?.Invoke(state);
-						}
-
-						character.ProcessSentRequest();
-						state.Requests.Remove(character.getCurrentRequestId());
-						
-					}
-            };
-
-            actions.Add(processRequest);
-
-            return actions;
-        }
-
-        actions.AddRange(GetUseItemActions(character));
-        actions.AddRange(GetMoveActions(character));
-        actions.AddRange(GetBuyItemsShopActions(character));
-        actions.AddRange(GetMugRequests(character));
-        actions.AddRange(GetLootActions(character));
-
-		var currentId = 0;
-		actions.ForEach((x) => {x.Id = currentId; currentId += 1;});
-
-
-        return actions;
-    }
-
-    public List<CharacterAction> GetLootActions(CharacterInfo character)
-    {
-        var actions = new List<CharacterAction>();
-
-		var characterId = character.Id;
-
-        foreach (var other in GetCharactersInPlace(character.getCurrentPlace()))
-        {
-			if (!other.isDead()){
-				continue;
+		if (character.GetHasSentRequest())
+		{
+			var process = new CharacterActionExecution
+			{
+				InitiatorId = characterId,
+				ActionType = ActionType.ProcessRequest
+			};
+			var processAction = availableActions[(int)ActionType.ProcessRequest];
+			if (processAction.Precondition(this, process))
+			{	
+				yield return process;
+				yield break;
 			}
-			if (other.getGold() == 0 && other.GetAllItems().Count == 0)
+		}
+
+		if (character.GetHasReceivedRequest())
+		{
+			var accept = new CharacterActionExecution
+			{
+				InitiatorId = characterId,
+				ActionType = ActionType.AcceptRequest
+			};
+			var action = availableActions[(int)ActionType.AcceptRequest];
+			if (action.Precondition(this, accept))
+			{	
+				yield return accept;
+			}
+
+			var refuse = new CharacterActionExecution
+			{
+				InitiatorId = characterId,
+				ActionType = ActionType.RefuseRequest
+			};
+
+			action = availableActions[(int)ActionType.RefuseRequest];
+			if (action.Precondition(this, refuse))
+			{	
+				yield return refuse;
+				yield break;
+			}
+			
+		}
+
+		for (int i=0; i < availableActions.Length; i++)
+		{
+			var action = availableActions[i];
+			if (action.Type == ActionType.Unclassified)
 			{
 				continue;
 			}
-			var otherId = other.Id; 
-            var action = new CharacterAction(character)
-            {
-                Description = "Loot",
-                Callback = (state) => {
-
-					var character = state.getCharacterById(characterId);
-					var other = state.getCharacterById(otherId);
-					state.Loot(character, other);
-					}
-            };
-
-            actions.Add(action);
-        }
-
-        return actions;
-    }
-
-    public List<CharacterAction> GetUseItemActions(CharacterInfo character)
-    {
-        var actions = new List<CharacterAction>();
-
-		var all_items = character.GetAllItems();
-		var characterId = character.Id;
-
-        for(int i = 0; i < all_items.Count; i++)
-        {
-			var item = all_items[i];
-			
-            if (item.ItemData.Type == Definitions.ItemType.Food)
-            {
-				var itemIndex = i;
-                var action = new CharacterAction(character) 
-				{
-                    Description = "Eat",
-					Type = ActionType.Eat,
-                    Callback = (state) =>
-                    {
-						var character = state.getCharacterById(characterId);
-						var item = character.GetItemAt(itemIndex); 
-						
-						item.TurnsUsed += 1;
-
-                        if (item.TurnsUsed > item.ItemData.MaxUses)
-                        {
-							character.RemoveItem(item);
-						}
-                        
-                        character.ReduceHunger();
-                    }
-                };
-
-                actions.Add(action);
-            }
-
-            if (item.ItemData.Type == Definitions.ItemType.MedKit)
-            {
-				var itemIndex = i;
-                var action = new CharacterAction(character)
-                {
-                    Description = "Heal",
-                    Callback = (state) =>
-                    {
-						var character = state.getCharacterById(characterId);
-						var item = character.GetItemAt(itemIndex);
-						
-						item.TurnsUsed += 1;
-
-                        if (item.TurnsUsed > item.ItemData.MaxUses)
-                        {
-							character.RemoveItem(item);
-						}
-
-                        character.RemoveItem(item);
-                        character.IncreaseHp();
-                    }
-                };
-
-                actions.Add(action);
-            }
-
-            if (item.ItemData.Type == Definitions.ItemType.Pickaxe &&
-                character.getCurrentPlace() == Definitions.PlaceType.Mine)
-            {
-				var itemIndex = i;
-                var action = new CharacterAction(character)
-                {
-                    Description = "Mine",
-					IsProbabilityAction = true,
-                    Callback = (state) =>
-                    {
-						var character = state.getCharacterById(characterId);
-						var item = character.GetItemAt(itemIndex);
-                        character.IncreaseHunger();
-
-                        item.TurnsUsed += 1;
-
-                        if (item.TurnsUsed > item.ItemData.MaxUses)
-						{
-                            character.RemoveItem(item);
-						}
-
-                    },
-					ProbabilityEffects = new List<ProbabilityActionEffect>
-					{
-						new ProbabilityActionEffect()
-						{
-							Probability = 0.1f,
-							Callback = (state) =>
-							{
-								var character = state.getCharacterById(characterId);
-                        		character.IncreaseGold(AmountMined);
-							}
-						},
-						new ProbabilityActionEffect()
-						{
-							Probability = 0.9f,
-							Callback = (state) => {}
-						}
-					}
-                };
-
-                actions.Add(action);
-            }
-
-            if (item.ItemData.Type == Definitions.ItemType.Gun)
-            {
-                actions.AddRange(GetGunActions(character));
-            }
-        }
-
-        return actions;
-    }
-
-    public List<CharacterAction> GetGunActions(CharacterInfo character)
-    {
-        var actions = new List<CharacterAction>();
-
-		var characterId = character.Id;
-
-        if (character.IsAimingGun)
-        {
-            if (character.HasItem(Definitions.ItemType.Ammo) && getCharacterById(character.CharacterAimedId).getCurrentPlace() == character.getCurrentPlace())
-            {
-				var other = getCharacterById(character.CharacterAimedId);
-                var action = new CharacterAction(character)
-                {
-                    Recipient = other,
-                    Type = ActionType.Shoot,
-                    Description = $"Shoot {other.getNameAndType()}",
-                    Callback = (state) =>
-                    {
-						var character = state.getCharacterById(characterId);
-						var other = state.getCharacterById(character.CharacterAimedId);
-                        other.ReduceHp();
-
-                        var item = character.GetItemOfType(Definitions.ItemType.Ammo);
-						item.TurnsUsed += 1;
-						if (item.TurnsUsed > item.ItemData.MaxUses)
-						{
-							character.RemoveItem(item);
-						}
-                    }
-                };
-
-                actions.Add(action);
-            }
-
-            var holsterAction = new CharacterAction(character)
-            {
-                Description = "Holster Gun",
-                Callback = (state) => state.getCharacterById(characterId).HolsterGun()
-            };
-
-            actions.Add(holsterAction);
-        }
-
-        foreach (var other in GetCharactersInPlace(character.getCurrentPlace()))
-        {
-            if (other == character)
-                continue;
-
-            var action = new CharacterAction(character)
-            {
-                Description = $"Aim Gun at {other.getNameAndType()}",
-
-                // The original GDScript says character here,
-                // but this should presumably be 'other'.
-                Callback = (state) => state.getCharacterById(characterId).AimGunAt(state.getCharacterById(other.Id))
-            };
-
-            actions.Add(action);
-        }
-
-        return actions;
-    }
-
-    public List<CharacterAction> GetMoveActions(CharacterInfo character)
-    {
-        var actions = new List<CharacterAction>();
-		var characterId = character.Id;
-
-        foreach (var place in GetPlaceNeighbours(character.getCurrentPlace()))
-        {
-			var placeType = place;
-            var action = new CharacterAction(character)
-            {
-                Description = $"Move to {place}",
-				Place = place,
-				Type = ActionType.Move,
-                Callback = (state) => {
-					var character = state.getCharacterById(characterId);
-					var oldPlace = character.getCurrentPlace();
-					character.moveToPlace(placeType);
-					state.OnCharacterMoved?.Invoke(character, oldPlace, placeType);
-					}
-            };
-
-            actions.Add(action);
-        }
-
-        return actions;
-    }
-
-    public List<CharacterAction> GetBuyItemsShopActions(CharacterInfo character)
-    {
-        var actions = new List<CharacterAction>();
-
-        if (character.getCurrentPlace() != Definitions.PlaceType.Shop &&
-            character.getCurrentPlace() != Definitions.PlaceType.Saloon)
-        {
-            return actions;
-        }
-
-        CharacterInfo owner = null;
-
-        foreach (var other in GetCharactersInPlace(character.getCurrentPlace()))
-        {
-            if (other == character)
-                continue;
-
-            if (other.Type == Definitions.CharacterType.ShopOwner ||
-                other.Type == Definitions.CharacterType.SaloonOwner)
-            {
-                owner = other;
-                break;
-            }
-        }
-
-        if (owner == null)
-            return actions;
-
-		var characterId = character.Id;
-		var ownerId = owner.Id;
-
-        foreach (var data in owner.GetAllItemData())
-        {
-            if (character.getGold() <= data.Price)
-                continue;
-
-			var ItemType = data.Type;
-            var action = new CharacterAction(character)
-            {
-                Description = $"Buy {data.Type.ToString()}",
-                Callback = (state) =>
-                {
-					var character = state.getCharacterById(characterId);
-					var owner = state.getCharacterById(ownerId);
-					var item = owner.GetItemOfType(ItemType);
-
-                    character.AddItem(item.ItemData);
-                    owner.RemoveItem(item);
-                    owner.IncreaseGold(item.ItemData.Price);
-                    character.ReduceGold(item.ItemData.Price);
-                }
-            };
-
-            actions.Add(action);
-        }
-
-        return actions;
-    }
-
-    public List<CharacterAction> GetMugRequests(CharacterInfo character)
-    {
-        var actions = new List<CharacterAction>();
-
-        if (character.Type != Definitions.CharacterType.Bandit)
-            return actions;
-
-        if (!character.IsAimingGun)
-            return actions;
-
-        var other = getCharacterById(character.CharacterAimedId);
-
-		if (character.GetHasSentRequest() || character.GetHasReceivedRequest() || other.GetHasReceivedRequest() || other.GetHasSentRequest())
-		{
-			return actions;
+			var execution = new CharacterActionExecution
+			{
+				InitiatorId = characterId,
+				ActionType = action.Type
+			};
+			if(action.Precondition != null && !action.Precondition(this, execution))
+			{
+				continue;
+			}
+			yield return execution;
 		}
+	}
 
-		var characterId = character.Id;
-		var otherId = other.Id;
-
-        var request = new RequestInfo
-        {
-            DescriptionIfAccepted = "You give me all your gold.",
-            DescriptionIfRefused = "I shoot you."
-        };
-
-        request.CallbackAccepted = (state) =>
-        {
-			var character = state.getCharacterById(characterId);
-			var other = state.getCharacterById(otherId); 
-            character.IncreaseGold(other.getGold());
-            other.ReduceGold(other.getGold());
-        };
-
-        request.CallbackRefused = (state) =>
-        {
-
-			var character = state.getCharacterById(characterId);
-            var gunActions = state.GetGunActions(character);
-
-            foreach (var gunAction in gunActions)
-            {
-                if (gunAction.Type == ActionType.Shoot &&
-                    gunAction.Recipient.Id == otherId)
-                {
-                    gunAction.Callback?.Invoke(state);
-                    return;
-                }
-            }
-        };
-
-        var action = new CharacterAction(character)
-        {
-            Description = $"Request: {request.GetDescription()}, to {other.getNameAndType()}",
-            Callback = (state) => 
-				{
-					var character = state.getCharacterById(characterId);
-					var other = state.getCharacterById(otherId);
-					state.Requests[state.CurrentRequestId] = request;
-					character.SendRequest(other, state.CurrentRequestId);
-					state.CurrentRequestId += 1;
-				}
-        };
-
-        actions.Add(action);
-
-        return actions;
-    }
-
-	public void executeAction(CharacterAction action, ProbabilityActionEffect forceEffect=null)
+	public IEnumerable<CharacterActionExecution> expandActionParameter(CharacterActionExecution execution)
 	{
-		action.Callback?.Invoke(this);
+		var action = availableActions[(int)execution.ActionType];
+		foreach(var place in action.GetPlaceTypePossibleValues(this, execution))
+		{
+			foreach(var otherId in action.GetOtherCharacterIdPossibleValues(this, execution))
+			{
+				foreach(var itemId in action.GetItemTypePossibleValues(this, execution))
+				{
+					var actionExecution = new CharacterActionExecution
+					{
+						ActionType = execution.ActionType,
+						otherCharacterId = otherId,
+						placeType = place,
+						itemType = itemId,
+					};
+					yield return actionExecution;
+				}
+			}
+		}
+	}
+
+
+	public void executeAction(CharacterActionExecution execution, bool executeProbEffect=true)
+	{
+		var action = availableActions[(int)execution.ActionType];
+		action.Callback?.Invoke(this, execution);
 		if (action.IsProbabilityAction)
 		{
-			if (forceEffect == null)
+			if (executeProbEffect)
 			{
 				var effect = MathUtils.Funtions.SampleWeighted(action.ProbabilityEffects, (effect) => effect.Probability);
-				effect.Callback?.Invoke(this);
-			}
-			else
-			{
-				forceEffect.Callback?.Invoke(this);
+				effect.Callback?.Invoke(this, execution);
 			}
 		}
-		OnActionExecuted?.Invoke(action);
+		OnActionExecuted?.Invoke(execution);
 		CurrentCharacterToProcess += 1;
 
 		if (CurrentCharacterToProcess == Characters.Count)
@@ -693,7 +405,6 @@ public class GameState
 
     public void ProcessTurn()
     {
-
         foreach (var character in Characters)
         {
             if (character.isDead())
@@ -701,6 +412,10 @@ public class GameState
 
             if (character.getHp() <= 0)
             {
+				if (character.GetHasSentRequest())
+				{
+					SetRequestStatus(character.getCurrentRequestId(), RequestInfo.RequestStatus.Unused);
+				}
                 character.Kill();
                 return;
             }

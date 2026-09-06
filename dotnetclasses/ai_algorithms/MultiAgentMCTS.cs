@@ -46,7 +46,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 
 			Children = new List<MCTSNode>();
 
-			UntriedActions = state.GetAvailableMoves(state.GetCurrentExecutingAgent()).ToList();
+			UntriedActions = state.GetAvailableActions(state.GetCurrentExecutingAgent()).ToList();
 			Visits = 0;
 			TotalValue = 0;
 
@@ -80,7 +80,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 
 			while(!isSameAgent(newState.GetCurrentExecutingAgent(), agent))
 			{
-				newState.ExecuteMove(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
+				newState.ExecuteAction(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
 			}
 
 			Debug.Assert(isSameAgent(newState.GetCurrentExecutingAgent(), agent));
@@ -117,13 +117,13 @@ public class MultiAgentMCTS<TAction, TAgent>
 
 			for (int i = 0; i < maxRolloutDepth; i++)
 			{
-				var moves = newState.GetAvailableMoves(newState.GetCurrentExecutingAgent());
+				var moves = newState.GetAvailableActions(newState.GetCurrentExecutingAgent());
 				var moveList = moves.ToList();
 
-				newState.ExecuteMove(moveList[random.Next(moveList.Count)]);
+				newState.ExecuteAction(moveList[random.Next(moveList.Count)]);
 				while(!isSameAgent(newState.GetCurrentExecutingAgent(), agent))
 				{
-					newState.ExecuteMove(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
+					newState.ExecuteAction(otherAgentPolicy(newState, newState.GetCurrentExecutingAgent()));
 				}
 
 				Debug.Assert(isSameAgent(newState.GetCurrentExecutingAgent(), agent));
@@ -178,7 +178,6 @@ public class MultiAgentMCTS<TAction, TAgent>
 		IMultiAgentGameState<TAction, TAgent> state,
 		IMultiAgentGameStateEvaluator<TAction, TAgent> evaluator,
 		Func<IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentPolicy,
-		Func<TAgent, TAgent, bool> isSameAgent,
 		int iterations = 50,
 		int maxRollouts = 30,
 		int maxExpansionDepth = 10,
@@ -189,7 +188,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 		)
 	{
 		
-		Debug.Assert(isSameAgent(state.GetCurrentExecutingAgent(), agent));
+		Debug.Assert(state.IsSameAgent(state.GetCurrentExecutingAgent(), agent));
 		var random = new Random();
 
 		var root = new MCTSNode(state.GetDuplicated());
@@ -220,7 +219,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 			watch.Start();
 			if (!node.IsTerminal() && !node.IsFullyExpanded())
 			{
-				node = node.Expand(random, agent, otherAgentPolicy, isSameAgent);
+				node = node.Expand(random, agent, otherAgentPolicy, state.IsSameAgent);
 			}
 
 			currentNodeId += 1;
@@ -232,7 +231,7 @@ public class MultiAgentMCTS<TAction, TAgent>
 			// Simulation
 			watch.Reset();
 			watch.Start();
-			float value = node.Rollout(maxRollouts, evaluator, random, agent, otherAgentPolicy, isSameAgent);
+			float value = node.Rollout(maxRollouts, evaluator, random, agent, otherAgentPolicy, state.IsSameAgent);
 
 			watch.Stop();
 //			GD.Print($"Rollout Elapsed: {watch.ElapsedTicks}");

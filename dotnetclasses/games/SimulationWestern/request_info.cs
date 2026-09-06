@@ -1,10 +1,11 @@
 using System;
 namespace WesternSimGame;
 
-public class RequestInfo
+public struct RequestInfo
 {
     public enum RequestStatus
     {
+		Unused,
         Pending,
         Accepted,
         Refused
@@ -14,8 +15,8 @@ public class RequestInfo
     public string DescriptionIfAccepted { get; set; }
     public string DescriptionIfRefused { get; set; }
 
-    public Action<GameState> CallbackAccepted { get; set; }
-    public Action<GameState> CallbackRefused { get; set; }
+    public Action<GameState, GameState.CharacterActionExecution> CallbackAccepted { get; set; }
+    public Action<GameState, GameState.CharacterActionExecution> CallbackRefused { get; set; }
 
     public string GetDescription()
     {

@@ -4,6 +4,7 @@ public static class Definitions
 {
     public enum ItemType
     {
+		Unclassified,
         Gun,
         Food,
         Pickaxe,
