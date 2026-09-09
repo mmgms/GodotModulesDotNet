@@ -106,64 +106,55 @@ public class Grid2D<T> : IEnumerable<Grid2D<T>.IterData>
 
     public bool IsInBounds(Vector2I pos) => IsInBounds(pos.X, pos.Y);
 
-    public List<Vector2I> GetNeighbours4(Vector2I pos)
+    public IEnumerable<Vector2I> GetNeighbours4(Vector2I pos)
     {
         if (!IsInBounds(pos))
             throw new ArgumentOutOfRangeException();
-
-        var neighbours = new List<Vector2I>(4);
 
         foreach (var dir in FourDirections)
         {
             var n = pos + dir;
             if (IsInBounds(n))
-                neighbours.Add(n);
+                yield return n;
         }
 
-        return neighbours;
     }
 
-    public List<Vector2I> GetNeighbours4NoBoundsCheck(Vector2I pos)
+    public IEnumerable<Vector2I> GetNeighbours4NoBoundsCheck(Vector2I pos)
     {
         if (!IsInBounds(pos))
             throw new ArgumentOutOfRangeException();
-
-        var neighbours = new List<Vector2I>(4);
 
         foreach (var dir in FourDirections)
-            neighbours.Add(pos + dir);
+		{
+			
+            yield return pos + dir;
+		}
 
-        return neighbours;
     }
 
-    public List<Vector2I> GetNeighbours8(Vector2I pos)
+    public IEnumerable<Vector2I> GetNeighbours8(Vector2I pos)
     {
         if (!IsInBounds(pos))
             throw new ArgumentOutOfRangeException();
-
-        var neighbours = new List<Vector2I>(8);
 
         foreach (var dir in EightDirections)
         {
             var n = pos + dir;
             if (IsInBounds(n))
-                neighbours.Add(n);
+                yield return n;
         }
 
-        return neighbours;
     }
 
-    public List<Vector2I> GetNeighbours8NoBoundsCheck(Vector2I pos)
+    public IEnumerable<Vector2I> GetNeighbours8NoBoundsCheck(Vector2I pos)
     {
         if (!IsInBounds(pos))
             throw new ArgumentOutOfRangeException();
 
-        var neighbours = new List<Vector2I>(8);
-
         foreach (var dir in EightDirections)
-            neighbours.Add(pos + dir);
+            yield return pos + dir;
 
-        return neighbours;
     }
 
     public Vector2I DataIndexToVector2I(int index)
@@ -176,6 +167,16 @@ public class Grid2D<T> : IEnumerable<Grid2D<T>.IterData>
         for (int i = 0; i < _data.Length; i++)
             yield return new IterData(DataIndexToVector2I(i), _data[i]);
     }
+
+	public IEnumerable<IterData> GetEnumerable()
+	{
+		var enumerator = GetEnumerator();
+		while (enumerator.MoveNext())
+		{
+			yield return enumerator.Current;
+		}
+	}
+
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
