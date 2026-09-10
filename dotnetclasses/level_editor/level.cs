@@ -39,7 +39,6 @@ public class Level
 	public event RoomAdded OnRoomAdded;
 	public delegate void RoomDeleted(int id);
 	public event RoomDeleted OnRoomDeleted;
-
 	public Grid2D<TileInfo> tiles;
 	public Dictionary<int, Room> rooms;
 	public Dictionary<int, Door> doors;
@@ -55,6 +54,11 @@ public class Level
 		tiles.Fill(new TileInfo{roomId = -1});
 		rooms = new Dictionary<int, Room>();
 		doors = new Dictionary<int, Door>();
+	}
+
+	public Vector2I getGridSize()
+	{
+		return tiles.Size;
 	}
 
 	public int addNewRoom(int extId=-1, Color? color=null, string name=null)
@@ -127,6 +131,13 @@ public class Level
 	public IEnumerable<int> getDoorIdsFromTileIdx(Vector2I idx)
 	{
 		return doors.Keys.Where((x) => doors[x].fromTile == idx || doors[x].toTile == idx );
+	}
+
+	public IEnumerable<Vector2I> getFloodFilled(Vector2I idx)
+	{
+		Debug.Assert(tiles.IsInBounds(idx));
+		var roomId = tiles[idx].roomId;
+		return GenericUtils.GraphSearchUtils<Vector2I>.FloodFill(idx, (x) => getRoomTileNeighbours(x, roomId));
 	}
 
 
@@ -243,6 +254,44 @@ public class Level
 			if (tiles[neighPos].roomId == roomId)
 			{
 				yield return neighPos;
+			}
+		}
+	}
+
+	public IEnumerable<int> getRoomIdsSortedBySize()
+	{
+		var roomSizes = new Dictionary<int, int>();
+		foreach(var tile in tiles)
+		{
+			var roomId = tile.Data.roomId; 
+			if(roomId == -1)
+			{
+				continue;
+			}
+			if (roomSizes.ContainsKey(roomId))
+			{
+				roomSizes[roomId] += 1;
+			}
+			else
+			{
+				roomSizes[roomId] = 1;
+			}
+		}
+
+		return rooms.Keys.AsEnumerable().OrderByDescending((x) => roomSizes.GetValueOrDefault(x, 0));
+	}
+
+	public IEnumerable<(Vector2I, Vector2I)> getRoomEdges(int roomId)
+	{
+		var roomTiles = getTilesPerRoom(roomId);
+		foreach (var tile in roomTiles)
+		{
+			foreach (var neigh in tiles.GetNeighbours4(tile.Point))
+			{
+				if(tiles[neigh].roomId != roomId)
+				{
+					yield return (tile.Point, neigh);
+				}
 			}
 		}
 	}
