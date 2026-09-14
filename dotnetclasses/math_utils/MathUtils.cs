@@ -143,4 +143,16 @@ public static class Funtions {
 
 		return center;
 	}
+
+	public static Vector2I GetGridIdxFromCenterAndRotation(Vector2I extents, Vector2I relGridIdx, Vector2 positionCenter, int rotation)
+	{
+		var relCenter = new Vector2(extents.X, extents.Y)/2.0f;
+		var vecToRelGridIdx = new Vector2(relGridIdx.X, relGridIdx.Y) + Vector2.One/2.0f - relCenter;
+		var rotatedVecToRelGridIdx = vecToRelGridIdx.Rotated(Definitions.Rotations[rotation]);
+		var temp = (positionCenter + rotatedVecToRelGridIdx).Floor();
+		return new Vector2I((int)temp.X, (int)temp.Y);
+		
+	}
+
+
 }

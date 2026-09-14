@@ -4,12 +4,14 @@ using Godot;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 public class Grid2D<T> : IEnumerable<Grid2D<T>.IterData>
 {
-    private readonly T[] _data;
-    private readonly int _sizeX;
-    private readonly int _sizeY;
+    private T[] _data {get; set;}
+    private int _sizeX {get; set;}
+    private int _sizeY {get; set;}
 
     private static readonly Vector2I[] FourDirections =
     {
@@ -57,7 +59,13 @@ public class Grid2D<T> : IEnumerable<Grid2D<T>.IterData>
         return copy;
     }
 
+	public void SetData(T[] data)
+	{
+		_data = data;
+	}
+
     public Vector2I Size => new(_sizeX, _sizeY);
+	public T[] Data => _data;
 
     public Vector2I Center => new(_sizeX / 2, _sizeY / 2);
 
@@ -191,4 +199,47 @@ public class Grid2D<T> : IEnumerable<Grid2D<T>.IterData>
         get => Get(pos);
         set => Set(pos, value);
     }
+}
+
+public class Grid2DJsonConverter<T> : JsonConverter<Grid2D<T>>
+{
+	public override Grid2D<T> Read(
+		ref Utf8JsonReader reader,
+		Type typeToConvert,
+		JsonSerializerOptions options)
+	{
+		using JsonDocument document = JsonDocument.ParseValue(ref reader);
+
+		JsonElement root = document.RootElement;
+
+		int sizeX = root.GetProperty("sizeX").GetInt32();
+		int sizeY = root.GetProperty("sizeY").GetInt32();
+
+		T[] data = root
+			.GetProperty("data")
+			.Deserialize<T[]>(options);
+
+		var grid = new Grid2D<T>(sizeX, sizeY);
+
+		// You'll need a way to restore the data.
+		grid.SetData(data);
+
+		return grid;
+	}
+
+	public override void Write(
+		Utf8JsonWriter writer,
+		Grid2D<T> grid,
+		JsonSerializerOptions options)
+	{
+		writer.WriteStartObject();
+
+		writer.WriteNumber("sizeX", grid.Size.X);
+		writer.WriteNumber("sizeY", grid.Size.Y);
+
+		writer.WritePropertyName("data");
+		JsonSerializer.Serialize(writer, grid.Data, options);
+
+		writer.WriteEndObject();
+	}
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.Json.Serialization;
 using DataStructures;
 using Godot;
 
@@ -9,7 +10,7 @@ namespace LevelEditor2D;
 
 public struct TileInfo
 {
-	public int roomId;
+	public int roomId {get; set;}
 	public TileInfo(){
 		roomId = -1;
 	}
@@ -19,8 +20,8 @@ public class Room
 {
 	public delegate void Deleted();
 	public event Deleted OnDeleted;
-	public Color debugColor;
-	public String name;
+	public Color debugColor {get; set;}
+	public String name {get; set;}
 	public void delete()
 	{
 		OnDeleted?.Invoke();
@@ -29,8 +30,15 @@ public class Room
 
 public class Door
 {
-	public Vector2I fromTile;
-	public Vector2I toTile;
+	public Vector2I fromTile {get; set;}
+	public Vector2I toTile {get; set;}
+}
+
+public class RoomObject
+{
+	public Vector2 centerPos {get; set;}
+	public Vector2I size {get; set;}
+	public int rotation {get; set;}
 }
 
 public class Level
@@ -39,14 +47,18 @@ public class Level
 	public event RoomAdded OnRoomAdded;
 	public delegate void RoomDeleted(int id);
 	public event RoomDeleted OnRoomDeleted;
-	public Grid2D<TileInfo> tiles;
-	public Dictionary<int, Room> rooms;
-	public Dictionary<int, Door> doors;
+	[JsonConverter(typeof(Grid2DJsonConverter<TileInfo>))]
+	public Grid2D<TileInfo> tiles {get; set;}
+	public Dictionary<int, Room> rooms {get; set;}
+	public Dictionary<int, RoomObject> roomObjects {get; set;}
+	public Dictionary<int, Door> doors {get; set;}
 	
 
-	private int nextRoomId;
-	private int nextDoorId;
+	public int nextRoomId {get; set;}
+	public int nextDoorId {get; set;}
+	public int nextRoomObjectId {get; set;}
 
+	public Level(){}
 
 	public Level(Vector2I size)
 	{
@@ -54,11 +66,22 @@ public class Level
 		tiles.Fill(new TileInfo{roomId = -1});
 		rooms = new Dictionary<int, Room>();
 		doors = new Dictionary<int, Door>();
+		roomObjects = new Dictionary<int, RoomObject>();
 	}
 
 	public Vector2I getGridSize()
 	{
 		return tiles.Size;
+	}
+
+	public int getNextRoomId()
+	{
+		return nextRoomId;
+	}
+
+	public int getNextRoomObjectId()
+	{
+		return nextRoomObjectId;
 	}
 
 	public int addNewRoom(int extId=-1, Color? color=null, string name=null)
@@ -70,7 +93,7 @@ public class Level
 		}
 		var room = new Room
 		{
-			debugColor = color != null ? color.Value : GenericUtils.Colors.GetRandomColor(0.5f, 0.7f),
+			debugColor = color != null ? color.Value : GenericUtils.Colors.GetRandomColor(0.5f, 0.7f, 0.5f),
 			name = name != null ? name : ""
 		};
 		rooms[id] = room;
@@ -100,6 +123,32 @@ public class Level
 		}
 		return id;
 	}
+	public int addNewRoomObject(Vector2 centerPos, int rotation, Vector2I size, int extId = -1)
+	{
+		var id = nextRoomObjectId;
+		if (extId >= 0)
+		{
+			id = extId;
+		}
+		var roomObject = new RoomObject
+		{
+			centerPos = centerPos,
+			rotation = rotation,
+			size = size
+		};
+		roomObjects[id] = roomObject;
+		if (extId < 0)
+		{
+			nextRoomObjectId += 1;
+		}
+		return id;
+	}
+	
+	public void removeLastAddedRoomObject()
+	{
+		removeRoomObject(nextRoomObjectId - 1);
+		nextRoomObjectId -= 1;
+	}
 
 	public void removeLastAddedRoom()
 	{
@@ -128,6 +177,11 @@ public class Level
 		return doors.GetValueOrDefault(id, null);
 	}
 
+	public RoomObject GetRoomObject(int id)
+	{
+		return roomObjects.GetValueOrDefault(id, null);
+	}
+
 	public IEnumerable<int> getDoorIdsFromTileIdx(Vector2I idx)
 	{
 		return doors.Keys.Where((x) => doors[x].fromTile == idx || doors[x].toTile == idx );
@@ -151,7 +205,62 @@ public class Level
 				break;
 			}
 		}
-		
+	}
+
+	private void removeRoomObjectAttachedToTile(Vector2I tile)
+	{
+		var objectId = getRoomObjectAttachedToTile(tile);
+		if(objectId > 0)
+		{
+			removeRoomObject(objectId);
+		}
+	}
+
+
+	public bool canAddRoomObject(Vector2 centerPos, int rotation, Vector2I extents)
+	{	
+		var roomIds = new HashSet<int>();
+		for (var i=0; i< extents.X; i++)
+		{
+			for (var j=0; j< extents.Y; j++)
+			{
+				var gridIdx = MathUtils.Funtions.GetGridIdxFromCenterAndRotation(extents, new Vector2I(i, j), centerPos, rotation);
+				if (!tiles.IsInBounds(gridIdx))
+				{
+					return false;
+				}
+				roomIds.Add(tiles[gridIdx].roomId);
+				if (roomIds.Count > 1)
+				{
+					return false;
+				}
+
+				if (getRoomObjectAttachedToTile(gridIdx) > 0)
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	public int getRoomObjectAttachedToTile(Vector2I tile)
+	{
+		foreach (var roomObject in roomObjects)
+		{
+			for (var i=0; i< roomObject.Value.size.X; i++)
+			{
+				for (var j=0; j< roomObject.Value.size.Y; j++)
+				{
+					var gridIdx = MathUtils.Funtions.GetGridIdxFromCenterAndRotation(roomObject.Value.size, new Vector2I(i, j), roomObject.Value.centerPos, roomObject.Value.rotation);
+					if (gridIdx == tile)
+					{
+						return roomObject.Key;
+					}
+				}
+			}
+		}
+		return -1;
 	}
 
 	public void removeRoom(int id)
@@ -160,6 +269,7 @@ public class Level
 		{
 			tiles[tile.Point] = tiles[tile.Point] with {roomId = -1};
 			removeDoorsAttachedToTile(tile.Point);
+			removeRoomObjectAttachedToTile(tile.Point);
 		}
 		rooms[id].delete();
 		rooms.Remove(id);
@@ -169,6 +279,11 @@ public class Level
 	public void removeDoor(int id)
 	{
 		doors.Remove(id);
+	}
+
+	public void removeRoomObject(int id)
+	{
+		roomObjects.Remove(id);
 	}
 
 	public IEnumerable<Grid2D<TileInfo>.IterData> getTilesPerRoom(int roomId)
@@ -243,6 +358,7 @@ public class Level
 	{
 		Debug.Assert(tiles.IsInBounds(idx));
 		removeDoorsAttachedToTile(idx);
+		removeRoomObjectAttachedToTile(idx);
 		tiles[idx] = tiles[idx] with {roomId = roomId};
 
 	}
@@ -294,6 +410,126 @@ public class Level
 				}
 			}
 		}
+	}
+
+	public struct RoomConnection
+	{
+		public int toRoom;
+
+		public int doorId;
+	}
+
+	public class Building
+	{
+		public List<int> rooms;
+	}
+
+	private Dictionary<int, List<RoomConnection>> roomsGraph;
+	private Dictionary<int, List<int>> roomAdjecencyGraph;
+
+	public void cacheRoomsGraph()
+	{
+		roomsGraph = new Dictionary<int, List<RoomConnection>>();
+		foreach (var roomId in rooms.Keys)
+		{
+			foreach (var otherId in rooms.Keys)
+			{
+				if (otherId == roomId)
+				{
+					continue;
+				}
+				foreach(var doorId in getDoorsBetweenRooms(roomId, otherId))
+				{	
+					addRoomsConnection(roomId, otherId, doorId, false);
+				}
+			}
+		}
+	}
+
+	public void cacheRoomAdjacencyGraph()
+	{
+		roomAdjecencyGraph = new Dictionary<int, List<int>>();
+		foreach (var roomId in rooms.Keys)
+		{
+			foreach (var otherId in rooms.Keys)
+			{
+				if (otherId == roomId)
+				{
+					continue;
+				}
+				if (areRoomsAdjecent(otherId, roomId))
+				{
+					if (!roomAdjecencyGraph.ContainsKey(roomId))
+					{
+						roomAdjecencyGraph[roomId] = new List<int>();
+					}
+					roomAdjecencyGraph[roomId].Add(otherId);
+				}
+			}
+		}
+	}
+
+	public IEnumerable<Building> getBuildings()
+	{
+		var disjointSets = GenericUtils.DisjointSet<int>.FindDisjointSets(rooms.Keys, (roomId) => roomAdjecencyGraph.GetValueOrDefault(roomId, new List<int>()));
+		foreach (var set in disjointSets)
+		{
+			yield return new Building
+			{
+				rooms = set.Elements	
+			};
+		} 
+	}
+
+	public IEnumerable<RoomConnection> getRoomNeighbours(int roomId)
+	{
+		if (!roomsGraph.ContainsKey(roomId))
+		{
+			yield break;
+		}
+
+		foreach (var connection in roomsGraph[roomId])
+		{
+			yield return connection;
+		}
+	}
+
+	private void addRoomsConnection(int roomA, int roomB, int doorId, bool bidirectional=true)
+	{
+		if (!roomsGraph.ContainsKey(roomA))
+		{
+			roomsGraph[roomA] = new List<RoomConnection>();
+		}
+		roomsGraph[roomA].Add(new RoomConnection{toRoom = roomB, doorId=doorId});
+		if (bidirectional)
+		{
+			addRoomsConnection(roomB, roomA, doorId, false);
+		}
+	}
+
+	private IEnumerable<int> getDoorsBetweenRooms(int roomA, int roomB)
+	{
+		foreach (var door in doors)
+		{
+			var idA = getTile(door.Value.fromTile).roomId;
+			var idB = getTile(door.Value.toTile).roomId;
+			if ((idA == roomA && idB == roomB) || (idA == roomB && idB == roomA))
+			{
+				yield return door.Key;
+			}
+		}
+	}
+
+	private bool areRoomsAdjecent(int roomA, int roomB)
+	{
+		foreach (var tile in getTilesPerRoom(roomA))
+		{
+			if (tiles.GetNeighbours4(tile.Point).Any((x) => getTile(x).roomId == roomB))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 	
 

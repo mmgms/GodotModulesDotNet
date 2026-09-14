@@ -35,10 +35,12 @@ public static class Colors
 
 		return new Color(r, g, b);
 	}
-	public static Color GetRandomColor(float saturation, float value)
+	public static Color GetRandomColor(float saturation, float value, float alpha=1.0f)
 	{
 		float hue = GD.Randf();
-		return Color.FromHsv(hue, saturation, value);
+		var color = Color.FromHsv(hue, saturation, value);
+		color.A = alpha;
+		return color;
 	}
 }
 
@@ -49,6 +51,13 @@ public static class Drawing
 		node.DrawLine(from, to, color, width);
 		node.DrawLine(to, to + to.DirectionTo(from).Rotated(Mathf.DegToRad(-arrowDeg)) * arrowLen, color, width );
 		node.DrawLine(to, to + to.DirectionTo(from).Rotated(Mathf.DegToRad(arrowDeg))* arrowLen, color, width );
+	}
+
+	public static void drawRectAtIdx(CanvasItem item, Vector2 tileSize, Vector2I idx, Color color, bool filled=true)
+	{
+		var pos = MathUtils.Funtions.GetCenteredPositionFromGridIdx(idx, tileSize);
+		var rect = MathUtils.Funtions.RectBetweenPoints(pos - tileSize /2, pos + tileSize /2);  
+		item.DrawRect(rect, color, filled);
 	}
 }
 
