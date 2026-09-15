@@ -127,10 +127,10 @@ public class GameState
 
 	public string GetActionDescription(CharacterActionExecution action)
 	{
-		var itemDesc = action.itemType != Definitions.ItemType.Unclassified ? action.itemType.ToString() : "";
-		var otherCharacter = action.otherCharacterId >= 0 ? getCharacterById(action.otherCharacterId).getNameAndType() : "";
+		var itemDesc = action.itemType != Definitions.ItemType.Unclassified ? action.itemType.ToString() + ", " : "";
+		var otherCharacter = action.otherCharacterId >= 0 ? getCharacterById(action.otherCharacterId).getNameAndType() + ", " : "";
 		var placeDesc = action.placeType != Definitions.PlaceType.Unclassified ? action.placeType.ToString() : "";
-		return $"{action.ActionType}({itemDesc}, {otherCharacter}, {placeDesc})";
+		return $"{action.ActionType}({itemDesc}{otherCharacter}{placeDesc})";
 	}
 
 	public GameState getDuplicated()
@@ -352,12 +352,13 @@ public class GameState
 		var action = availableActions[(int)execution.ActionType];
 		foreach(var place in action.GetPlaceTypePossibleValues(this, execution))
 		{
-			foreach(var otherId in action.GetOtherCharacterIdPossibleValues(this, execution))
+			foreach(var otherId in action.GetOtherCharacterIdPossibleValues(this, execution with {placeType = place}))
 			{
-				foreach(var itemId in action.GetItemTypePossibleValues(this, execution))
+				foreach(var itemId in action.GetItemTypePossibleValues(this, execution with {otherCharacterId = otherId, placeType = place}))
 				{
 					var actionExecution = new CharacterActionExecution
 					{
+						InitiatorId = execution.InitiatorId,
 						ActionType = execution.ActionType,
 						otherCharacterId = otherId,
 						placeType = place,
@@ -372,6 +373,8 @@ public class GameState
 
 	public void executeAction(CharacterActionExecution execution, bool executeProbEffect=true)
 	{
+		var character = getCharacterById(execution.InitiatorId);
+		var oldPlace = character.getCurrentPlace();
 		var action = availableActions[(int)execution.ActionType];
 		action.Callback?.Invoke(this, execution);
 		if (action.IsProbabilityAction)
@@ -384,6 +387,11 @@ public class GameState
 		}
 		OnActionExecuted?.Invoke(execution);
 		CurrentCharacterToProcess += 1;
+
+		if(oldPlace != character.getCurrentPlace())
+		{
+			OnCharacterMoved?.Invoke(character, oldPlace, character.getCurrentPlace());
+		}
 
 		if (CurrentCharacterToProcess == Characters.Count)
 		{

@@ -280,8 +280,11 @@ public class CharacterInfo
 			var itemSlot = Inventory[i];
 
 			if (itemSlot.used)
-			{
-				yield return itemSlot.ItemData.Type;
+			{	
+				if (!Inventory.Take(i).Any((x) => x.used && x.ItemData.Type == itemSlot.ItemData.Type))
+				{
+					yield return itemSlot.ItemData.Type;
+				}
 			}
 		}
 	}
@@ -311,7 +314,6 @@ public class CharacterInfo
 		IncreseItemTurnUsed(index);
 		if (GetItemTurnsUsed(index) > item.ItemData.MaxUses)
 		{
-			Inventory[index].TurnsUsed = 0;
 			RemoveItem(index);
 		}
 	}
@@ -323,7 +325,7 @@ public class CharacterInfo
 	public void RemoveItem(int index)
     {
 		Debug.Assert(Inventory[index].used);
-		Inventory[index].used =false;
+		Inventory[index] = Inventory[index] with {used = false, TurnsUsed = 0};
 
 		OnStatsChanged?.Invoke();
     }

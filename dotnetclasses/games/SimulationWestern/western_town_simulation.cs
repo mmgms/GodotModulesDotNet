@@ -30,6 +30,8 @@ class WesternTownSimulation
 	private int maxMCTSIterations = 20000;
 	private float mctsCFactor = 1.4f;
 
+	private Dictionary<short, CharacterValueFunction> valueFunctions;
+
 
 	public WesternTownSimulation()
 	{
@@ -118,18 +120,24 @@ class WesternTownSimulation
         //     .AddItem(GunData)
 		// 	.AddItemAmount(AmmoData, 10);
 
-		var numOfBamdits = 1;
-        for (int i = 0; i < numOfBamdits; i++)
-        {
-            gameState.AddCharacter(
-                PopName(nameList),
-                Definitions.CharacterType.Bandit)
-                .SetGold(10)
-				.SetHunger(7)
-                .SetPlace(Definitions.PlaceType.Road)
-                .AddItem(GunData)
-				.AddItem(AmmoData, 10);
-        }
+		// var numOfBamdits = 1;
+        // for (int i = 0; i < numOfBamdits; i++)
+        // {
+        //     gameState.AddCharacter(
+        //         PopName(nameList),
+        //         Definitions.CharacterType.Bandit)
+        //         .SetGold(10)
+		// 		.SetHunger(7)
+        //         .SetPlace(Definitions.PlaceType.Road)
+        //         .AddItem(GunData)
+		// 		.AddItem(AmmoData, 10);
+        // }
+
+		valueFunctions = new Dictionary<short, CharacterValueFunction>();
+		foreach (var character in gameState.Characters)
+		{
+			valueFunctions[character.Id] = new CharacterValueFunction(character.Id);
+		}
 	}
 
 	private static string PopName(List<string> names)
@@ -167,10 +175,11 @@ class WesternTownSimulation
 		res.plan = new List<GameState.CharacterActionExecution>();
 
 
-		Func<WGameState, short, GameState.CharacterActionExecution> otherAgentPolicy = (gameState, id) =>
+		Func<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>, short, GameState.CharacterActionExecution> otherAgentPolicy = (gameState, id) =>
 			{	
-				var action = getNullAction(characterToExecute); 
-				var useItemActions = gameState.gameState.getAvailableActions(id).Where(x => x.ActionType == GameState.ActionType.UseItemOnSelf).ToList();
+				var state = (WGameState)gameState;
+				var action = getNullAction(state.gameState.getCharacterById(id)); 
+				var useItemActions = state.gameState.getAvailableActions(id).Where(x => x.ActionType == GameState.ActionType.UseItemOnSelf).ToList();
 				if (useItemActions.Count > 0)
 				{
 					var eatActions = gameState.ExpandParametricAction(useItemActions.First()).ToList();
@@ -178,8 +187,7 @@ class WesternTownSimulation
 					{
 						action = eatActions.First();
 					}
-				}
-				
+				}				
 				return action;
 
 			};
@@ -190,15 +198,20 @@ class WesternTownSimulation
 			return res;
 		}
 		
-		Func<short, short, bool> isSameAgent = (a, b) => a == b; 
-		Func<GameState.CharacterAction, GameState.CharacterAction, bool> isSameAction = (a, b) => a.Type == b.Type;
-
 		if (!useMcts)
 		{
 			var planner = new AI.SingleAgentPlanner<GameState.CharacterActionExecution, short>();
-			var planRes = planner.GetIterativeDeepeningPlan(characterToExecute.Id, new WGameState(gameState), new WEvaluator(),
-				(Func<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>, short, GameState.CharacterActionExecution>)otherAgentPolicy,
-				new WGameStateComparer(),
+			var planRes = planner.GetIterativeDeepeningPlan(
+				characterToExecute.Id, new WGameState(gameState), new WEvaluator(),
+				otherAgentPolicy,
+				(state, characterId, execution, depth, value) =>
+				{
+					valueFunctions[characterId].setValue(((WGameState)state).gameState, execution, depth, value);
+				},
+				(state, characterId, execution) =>
+				{
+					return valueFunctions[characterId].getValue(((WGameState)state).gameState, execution);
+				},
 				maxExplorationDepth,
 				maxIterations
 				);
@@ -210,7 +223,7 @@ class WesternTownSimulation
 		{
 			var mcts = new AI.MultiAgentMCTS<GameState.CharacterActionExecution, short>();
 			var planRes = mcts.GetPlan(characterToExecute.Id, new WGameState(gameState), new WEvaluator(),
-				(Func<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>, short, GameState.CharacterActionExecution>)otherAgentPolicy, 
+				otherAgentPolicy, 
 				maxMCTSIterations, 
 				maxRolloutDepth,
 				maxMCTSEspansionDepth,
@@ -269,6 +282,81 @@ class WesternTownSimulation
 					character.AddItem(AmmoData, 1);
                 }
             }
+		}
+	}
+
+	public class CharacterValueFunction
+	{
+		private struct SearchInfo
+		{
+			public float value;
+			public int depth;
+		}
+		
+		private short characterId;
+		private Dictionary<int, SearchInfo> valueDict;
+		public CharacterValueFunction(short id)
+		{
+			this.characterId = id;
+			valueDict = new Dictionary<int, SearchInfo>();
+		}
+
+		private int getActionStateHash(GameState state, GameState.CharacterActionExecution action)
+		{
+			
+			var hash = new HashCode();
+
+			var character = state.getCharacterById(this.characterId);
+			var hp = character.getHp();
+			hash.Add(hp <= 3);
+			hash.Add(hp > 3 && hp < 6);
+			hash.Add(hp >= 6);
+
+			var hunger = character.getHunger();
+			hash.Add(hunger <= 3);
+			hash.Add(hunger > 3 && hunger < 6);
+			hash.Add(hunger >= 6);
+
+			var gold = character.getGold();
+			hash.Add(gold <= 10);
+			hash.Add(gold > 10 && gold < 30);
+			hash.Add(gold >= 30);
+
+			hash.Add(character.getCurrentPlace());
+			hash.Add(character.HasItem(Definitions.ItemType.Gun));
+			hash.Add(character.HasItem(Definitions.ItemType.Food));
+			hash.Add(character.HasItem(Definitions.ItemType.Ammo));
+			hash.Add(character.HasItem(Definitions.ItemType.Pickaxe));
+			hash.Add(character.isDead());
+			hash.Add(character.IsAimingGun);
+			hash.Add(character.GetHasReceivedRequest());
+			hash.Add(character.GetHasSentRequest());
+			hash.Add(action.ActionType);
+			return hash.ToHashCode();
+		}
+		public void setValue(GameState state, GameState.CharacterActionExecution action, int depth, float value)
+		{
+			var hash = getActionStateHash(state, action);
+			if (!valueDict.ContainsKey(hash))
+			{
+				valueDict[hash] = new SearchInfo{ depth = depth, value = value};
+				return;
+			}
+			var info = valueDict[hash];
+			if (depth > info.depth)
+			{
+				valueDict[hash] = new SearchInfo{ depth = depth, value = value};
+			}
+		}
+
+		public float getValue(GameState state, GameState.CharacterActionExecution action)
+		{
+			var hash = getActionStateHash(state, action);
+			if (!valueDict.ContainsKey(hash))
+			{
+				return float.NegativeInfinity;
+			}
+			return valueDict[hash].value;
 		}
 	}
 
@@ -336,7 +424,7 @@ class WesternTownSimulation
 				var probabilityEffect = new AI.ProabilityEffect<GameState.CharacterActionExecution, short>();
 				
 				probabilityEffect.probability = effect.Probability;
-				probabilityEffect.Callback = (Action<AI.IMultiAgentGameState<GameState.CharacterActionExecution, short>, GameState.CharacterActionExecution>)effect.Callback;
+				probabilityEffect.Callback = (state, action) => effect.Callback(((WGameState)state).gameState, action);
 				yield return probabilityEffect;
 			}
 		}
