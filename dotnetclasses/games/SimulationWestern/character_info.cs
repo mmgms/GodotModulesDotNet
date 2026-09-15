@@ -273,7 +273,7 @@ public class CharacterInfo
         return -1;
     }
 
-	public IEnumerable<Definitions.ItemType> getAllTypes()
+	public IEnumerable<ItemData> getAllItemData()
 	{
 		for (int i = 0; i < Inventory.Length; i++)
 		{
@@ -283,7 +283,7 @@ public class CharacterInfo
 			{	
 				if (!Inventory.Take(i).Any((x) => x.used && x.ItemData.Type == itemSlot.ItemData.Type))
 				{
-					yield return itemSlot.ItemData.Type;
+					yield return itemSlot.ItemData;
 				}
 			}
 		}

@@ -94,7 +94,7 @@ public class GameState
 	}
 
 
-    public double ProbabilityOfMiningGold { get; set; } = 0.1;
+    public double ProbabilityOfMiningGold { get; set; } = 1.0;
     public int AmountMined { get; set; } = 25;
 
 	public delegate void EndTurn(GameState gameState);
@@ -343,6 +343,10 @@ public class GameState
 			{
 				continue;
 			}
+			if (action.IsParametricAction && expandActionParameter(execution).Count() == 0)
+			{
+				continue;
+			}
 			yield return execution;
 		}
 	}
@@ -364,6 +368,10 @@ public class GameState
 						placeType = place,
 						itemType = itemId,
 					};
+					if(otherId == -1 && place == Definitions.PlaceType.Unclassified && itemId == Definitions.ItemType.Unclassified)
+					{
+						yield break;
+					}
 					yield return actionExecution;
 				}
 			}
@@ -443,6 +451,11 @@ public class GameState
                     return;
                 }
             }
+
+			if (character.IsAimingGun && character.getCurrentPlace() != getCharacterById(character.CharacterAimedId).getCurrentPlace())
+			{
+				character.IsAimingGun = false;
+			}
 
         }
 		OnTurnCompleted?.Invoke(this);

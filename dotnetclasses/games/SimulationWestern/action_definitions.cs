@@ -22,13 +22,17 @@ public static class ActionsDefinitions
 			GetItemTypePossibleValues = (state, execution) =>
 			{
 				var character = state.getCharacterById(execution.InitiatorId);
-				return character.getAllTypes().Where((x) => x == Definitions.ItemType.Food); 
+				return character.getAllItemData().Where((x) => x.Type == Definitions.ItemType.Food).Select((x) => x.Type); 
 			},
 			Callback = (state, execution) =>
 			{
 				if (execution.itemType == Definitions.ItemType.Food)
 				{
 					var character = state.getCharacterById(execution.InitiatorId);
+					if (character.Type == Definitions.CharacterType.Bandit)
+					{
+						
+					}
 					var index = character.GetIndexForType(execution.itemType); 
 					var item = character.GetItemAt(index);
 
@@ -49,6 +53,11 @@ public static class ActionsDefinitions
 		{
 			Type = GameState.ActionType.Move,
 			IsParametricAction = true,
+			Precondition = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				return character.Type != Definitions.CharacterType.SaloonOwner && character.Type != Definitions.CharacterType.ShopOwner;
+			},
 			GetPlaceTypePossibleValues = (state, execution) =>
 			{
 				var character = state.getCharacterById(execution.InitiatorId);
@@ -136,10 +145,13 @@ public static class ActionsDefinitions
 		var shootAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.Shoot,
-			IsParametricAction = true,
 			Precondition = (state, execution) =>
 			{	
 				var character = state.getCharacterById(execution.InitiatorId);
+				if (state.GetCharactersInPlace(character.getCurrentPlace()).Count((x) => x.Id == character.CharacterAimedId) == 0)
+				{
+					return false;
+				}
 				return character.IsAimingGun && character.HasItem(Definitions.ItemType.Gun) && character.HasItem(Definitions.ItemType.Ammo);
 			},
 			GetOtherCharacterIdPossibleValues = (state, execution) =>
@@ -212,8 +224,9 @@ public static class ActionsDefinitions
 			},
 			GetItemTypePossibleValues = (state, execution) =>
 			{
+				var character = state.getCharacterById(execution.InitiatorId);
 				var otherCharacter = state.getCharacterById(execution.otherCharacterId);
-				return otherCharacter.getAllTypes();
+				return otherCharacter.getAllItemData().Where((x) => x.Price <= character.getGold()).Select((x) => x.Type);
 			},
 			Callback = (state, execution) =>
 			{
@@ -233,7 +246,6 @@ public static class ActionsDefinitions
 		var mugRequestAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.MugRequest,
-			IsParametricAction = true,
 			Precondition = (state, execution) =>
 			{
 				var character = state.getCharacterById(execution.InitiatorId);
@@ -304,6 +316,10 @@ public static class ActionsDefinitions
 				Debug.Assert(idx >= 0);
 				state.setRequestAtIndex(idx, request);
 				character.SendRequest(other, idx);
+				if (character.Type == Definitions.CharacterType.Bandit)
+				{
+					
+				}
 			}
 		};
 		gameState.addAction(mugRequestAction);
@@ -356,9 +372,8 @@ public static class ActionsDefinitions
 			{
 				var character = state.getCharacterById(execution.InitiatorId);
 				var reqId = character.getCurrentRequestId();
-				state.SetRequestStatus(reqId, RequestInfo.RequestStatus.Refused);
-				character.RefuseRequest();
-				var CurrentRequest = state.getRequestInfoById(character.getCurrentRequestId());
+				
+				var CurrentRequest = state.getRequestInfoById(reqId);
 				if (CurrentRequest.Status == RequestInfo.RequestStatus.Accepted)
 				{
 					CurrentRequest.CallbackAccepted?.Invoke(state, execution);
