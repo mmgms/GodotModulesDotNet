@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using Godot;
 
 namespace WesternSimGame;
 
@@ -21,7 +22,7 @@ class WesternTownSimulation
 
 	private int maxExplorationDepth = 7;
 
-	private int maxIterations = 100000;
+	private int maxIterations = 200000;
 
 
 	private bool useMcts = false;
@@ -83,16 +84,16 @@ class WesternTownSimulation
 
         var nameList = new List<string>(Names.NameList);
 
-		// var numOfMiners = 1;
-        // for (int i = 0; i < numOfMiners; i++)
-        // {
-        //     gameState.AddCharacter(
-        //         PopName(nameList),
-        //         Definitions.CharacterType.Miner)
-        //         .SetGold(7)
-		// 		.SetHunger(7)
-        //         .SetPlace(Definitions.PlaceType.Road);
-        // }
+		var numOfMiners = 1;
+        for (int i = 0; i < numOfMiners; i++)
+        {
+            gameState.AddCharacter(
+                PopName(nameList),
+                Definitions.CharacterType.Miner)
+                .SetGold(7)
+				.SetHunger(9)
+                .SetPlace(Definitions.PlaceType.Thuroughfare);
+        }
 
         // gameState.AddCharacter(
         //     PopName(nameList),
@@ -117,20 +118,20 @@ class WesternTownSimulation
         //     .SetGold(10)
         //     .SetPlace(Definitions.PlaceType.SheriffStation)
         //     .AddItem(GunData)
-		// 	.AddItemAmount(AmmoData, 10);
+		// 	.AddItem(AmmoData, 1);
 
-		var numOfBamdits = 1;
-        for (int i = 0; i < numOfBamdits; i++)
-        {
-            gameState.AddCharacter(
-                PopName(nameList),
-                Definitions.CharacterType.Bandit)
-                .SetGold(10)
-				.SetHunger(7)
-                .SetPlace(Definitions.PlaceType.Road)
-                .AddItem(GunData)
-				.AddItem(AmmoData, 1);
-        }
+		// var numOfBamdits = 1;
+        // for (int i = 0; i < numOfBamdits; i++)
+        // {
+        //     gameState.AddCharacter(
+        //         PopName(nameList),
+        //         Definitions.CharacterType.Bandit)
+        //         .SetGold(10)
+		// 		.SetHunger(7)
+        //         .SetPlace(Definitions.PlaceType.Road)
+        //         .AddItem(GunData)
+		// 		.AddItem(AmmoData, 1);
+        // }
 
 		valueFunctions = new Dictionary<short, CharacterValueFunction>();
 		foreach (var character in gameState.Characters)
@@ -207,10 +208,6 @@ class WesternTownSimulation
 		if (!useMcts)
 		{
 			var planner = new AI.SingleAgentPlanner<GameState.CharacterActionExecution, short>();
-			if (characterToExecute.Type == Definitions.CharacterType.Bandit)
-			{
-				
-			}
 			var planRes = planner.GetIterativeDeepeningPlan(
 				characterToExecute.Id, new WGameState(gameState), new WEvaluator(),
 				otherAgentPolicy,
@@ -243,12 +240,34 @@ class WesternTownSimulation
 			res.plan = planRes.plan;
 			res.action = planRes.plan[0];
 		}
-
 		
 		if (res.plan.Count == 0)
 		{
 			res.action = getNullAction(characterToExecute); 
 			return res;
+		}
+		//valueFunctions[characterToExecute.Id].valueDict.Values.ToList().ForEach((x) => GD.Print($"{x.depth}, {x.value}"));
+		GD.Print($"Current Value: {new WEvaluator().EvaluateState(new WGameState(gameState), characterToExecute.Id)}");
+		GD.Print("Value Function:");
+		foreach (var action in gameState.getAvailableActions(characterToExecute.Id))
+		{
+			if (gameState.getActionBytype(action.ActionType).IsParametricAction)
+			{
+				foreach (var paramAction in gameState.expandActionParameter(action))
+				{
+					var paramInfo = valueFunctions[characterToExecute.Id].getInfo(gameState, paramAction);
+					if (paramInfo != null)
+					{
+						GD.Print($"\t{gameState.GetActionDescription(paramAction)} : (value){paramInfo.Value.value}, (depth){paramInfo.Value.depth}, (action){gameState.GetActionDescription(paramInfo.Value.action)}");
+					}		
+				}
+				continue;
+			}
+			var info = valueFunctions[characterToExecute.Id].getInfo(gameState, action);
+			if (info != null)
+			{
+				GD.Print($"\t{gameState.GetActionDescription(action)} : (value){info.Value.value}, (depth){info.Value.depth}, (action){gameState.GetActionDescription(info.Value.action)}");
+			}
 		}
 
 
@@ -316,7 +335,7 @@ class WesternTownSimulation
 
 	public class CharacterValueFunction
 	{
-		private struct SearchInfo
+		public struct SearchInfo
 		{
 			public CharacterInfo characterState;
 			public GameState.CharacterActionExecution action;
@@ -325,7 +344,7 @@ class WesternTownSimulation
 		}
 		
 		private short characterId;
-		private Dictionary<int, SearchInfo> valueDict;
+		public Dictionary<int, SearchInfo> valueDict;
 		public CharacterValueFunction(short id)
 		{
 			this.characterId = id;
@@ -363,6 +382,9 @@ class WesternTownSimulation
 			hash.Add(character.GetHasReceivedRequest());
 			hash.Add(character.GetHasSentRequest());
 			hash.Add(action.ActionType);
+			hash.Add(action.placeType);
+			hash.Add(action.itemType);
+			hash.Add(action.otherCharacterId);
 			return hash.ToHashCode();
 		}
 		public void setValue(GameState state, GameState.CharacterActionExecution action, int depth, float value)
@@ -389,6 +411,16 @@ class WesternTownSimulation
 				return float.NegativeInfinity;
 			}
 			return valueDict[hash].value;
+		}
+
+		public SearchInfo? getInfo(GameState state, GameState.CharacterActionExecution action)
+		{
+			var hash = getActionStateHash(state, action);
+			if (!valueDict.ContainsKey(hash))
+			{
+				return null;
+			}
+			return valueDict[hash];
 		}
 	}
 
@@ -512,31 +544,38 @@ class WesternTownSimulation
 				return -1000;//float.NegativeInfinity;
 
 			if (character.Type == Definitions.CharacterType.Miner)
-				return character.getGold() + 10 * character.getHp() - character.getHunger();
+				return getStatsScore(character);
 
 			if (character.Type == Definitions.CharacterType.Bandit)
-				return character.getGold() + 10 * character.getHp() - character.getHunger();
+				return getStatsScore(character);
 
 			if (character.Type == Definitions.CharacterType.ShopOwner)
-				return character.getGold() + 10 * character.getHp() - character.getHunger();
+				return getStatsScore(character);
 
 			if (character.Type == Definitions.CharacterType.SaloonOwner)
-				return character.getGold() + 10 * character.getHp() - character.getHunger();
+				return getStatsScore(character);
 
 			if (character.Type == Definitions.CharacterType.Sheriff)
 			{
-				int score = 0;
+				int score = getStatsScore(character);
 
 				foreach (var other in gameState.Characters)
 				{
-					if (other != character)
+					if (other != character && other.Type != Definitions.CharacterType.Bandit)
+					{
 						score += other.getHp();
+					}
 				}
 
 				return score;
 			}
 
 			return 0;
+		}
+
+		private int getStatsScore(CharacterInfo character)
+		{
+			return character.getGold() + 10 * character.getHp() - character.getHunger();
 		}
 
     	public float GetTerminationValue(AI.IMultiAgentGameState<GameState.CharacterActionExecution, short> gameState, short agent)

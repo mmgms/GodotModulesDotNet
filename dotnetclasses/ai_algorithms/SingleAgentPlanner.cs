@@ -15,6 +15,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 		public NodeType type;
 		public TAction action;
 		public int depth;
+		public int depthSearched;
 		public SearchNode parent;
 		public List<SearchNode> children;
 		public AI.IMultiAgentGameState<TAction, TAgent> state;
@@ -28,14 +29,12 @@ public class SingleAgentPlanner<TAction, TAgent>
 			children = new List<SearchNode>();
 		}
 
-		public void BackPropagate(float value, int depthSearched,
-			Action<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction, int, float> storeValueAction,
-			Func<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction, float> retrieveValueAction)
+		public void BackPropagate(float value, int depthSearched)
 		{
+			this.depthSearched = depthSearched;
 			if (type == NodeType.Maximizer)
 			{
 				this.value = Math.Max(this.value, value);
-				storeValueAction(this.state, this.agent, this.action, this.depth, this.value);
 			}
 			if (type == NodeType.Chance)
 			{
@@ -49,10 +48,9 @@ public class SingleAgentPlanner<TAction, TAgent>
 			if (type == NodeType.ParameterExpansion)
 			{
 				this.value = Math.Max(this.value, value);
-				storeValueAction(this.state, this.agent, this.action, this.depth, this.value);
 			}
 			
-			parent?.BackPropagate(this.value, depthSearched, storeValueAction, retrieveValueAction);
+			parent?.BackPropagate(this.value, depthSearched);
 		}
 	}
 
@@ -139,7 +137,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 			if (current.depth >= maxDepth || iterations > maxIterations)
 			{
 				current.value = evaluator.EvaluateState(current.state, agent);
-				current.BackPropagate(current.value, current.depth, storeValueAction, retrieveValueAction);
+				current.BackPropagate(current.value, current.depth);
 				continue;
 			}
 			if (iterations > maxIterations)
@@ -149,18 +147,6 @@ public class SingleAgentPlanner<TAction, TAgent>
 
 			var availableMoves = current.state.GetAvailableActions(current.state.GetCurrentExecutingAgent()).ToList();
 
-			// SearchInfo info = null;
-			// if (heuristic.ContainsKey(current.state))
-			// {
-			// 	info = heuristic[current.state];
-			// }  
-
-			// if (info != null && info.depthSearched >= current.depth)
-			// {
-			// 	current.value = info.value;
-			// 	current.BackPropagate(current.value, current.depth, heuristic);
-			// 	continue;
-			// }
 
 			availableMoves = availableMoves
 				.OrderByDescending(x => retrieveValueAction(state, agent, x))
@@ -235,6 +221,8 @@ public class SingleAgentPlanner<TAction, TAgent>
 
 		}
 
+		updateValueFunction(start, storeValueAction);
+
 		var plan = new List<TAction>();
 		var res = new PlanResult();
 
@@ -254,6 +242,32 @@ public class SingleAgentPlanner<TAction, TAgent>
 		res.bestScore = start.value;
 		return res;
 	}
+
+	private void updateValueFunction(SearchNode root, Action<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction, int, float> storeValueAction)
+	{
+		var queue = new Stack<SearchNode>();
+		queue.Push(root);
+
+		while (queue.Count > 0)
+		{
+			var current = queue.Pop();
+			if (current.type == NodeType.Maximizer || current.type == NodeType.ParameterExpansion)
+			{
+				foreach (var child in current.children)
+				{
+					storeValueAction(current.state, current.agent, child.action, current.depthSearched - current.depth, child.value );
+					queue.Push(child);
+				}
+			} else if (current.type == NodeType.Chance)
+			{
+				foreach (var child in current.children)
+				{
+					queue.Push(child);
+				}
+			}
+		}
+	}
+
 
 	private void SimulateStateUntilAgent(TAgent agent,
 		AI.IMultiAgentGameState<TAction, TAgent> state, 

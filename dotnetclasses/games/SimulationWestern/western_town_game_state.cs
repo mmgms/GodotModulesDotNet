@@ -94,7 +94,7 @@ public class GameState
 	}
 
 
-    public double ProbabilityOfMiningGold { get; set; } = 1.0;
+    public double ProbabilityOfMiningGold { get; set; } = 0.1;
     public int AmountMined { get; set; } = 25;
 
 	public delegate void EndTurn(GameState gameState);
@@ -214,10 +214,7 @@ public class GameState
     {
         toCharacter.IncreaseGold(other.getGold());
         toCharacter.AddItemList(other.GetAllItems());
-		foreach (var item in other.GetAllItems())
-		{
-			other.RemoveItem(other.GetIndexForType(item.ItemData.Type));
-		}
+		other.clearInventory();
     }
 
     public IEnumerable<CharacterInfo> GetCharactersInPlace(Definitions.PlaceType place)

@@ -5,50 +5,37 @@ namespace WesternSimGame;
 
 public static class ActionsDefinitions
 {
+	private static int gunDamage = 3;
+	private static int foodHungerReduction = 5;
 	
 	public static void fillActionList(GameState gameState)
+	{
+		fillDoNothingAction(gameState);
+
+		fillMoveAction(gameState);
+
+		fillUseItemActions(gameState);
+		fillGunActions(gameState);
+		fillLootAction(gameState);
+
+		fillBuyAction(gameState);
+		fillMugAction(gameState);
+		fillRequestAction(gameState);
+	}
+
+	private static void fillDoNothingAction(GameState gameState)
 	{
 		var doNothingAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.DoNothing,
-			Callback = (state, execution) => {}
+			Callback = (state, execution) => { }
 		};
 		gameState.addAction(doNothingAction);
+	}
 
-		var useItemAction = new GameState.CharacterAction
-		{
-			Type = GameState.ActionType.UseItemOnSelf,
-			IsParametricAction = true,
-			GetItemTypePossibleValues = (state, execution) =>
-			{
-				var character = state.getCharacterById(execution.InitiatorId);
-				return character.getAllItemData().Where((x) => x.Type == Definitions.ItemType.Food).Select((x) => x.Type); 
-			},
-			Callback = (state, execution) =>
-			{
-				if (execution.itemType == Definitions.ItemType.Food)
-				{
-					var character = state.getCharacterById(execution.InitiatorId);
-					if (character.Type == Definitions.CharacterType.Bandit)
-					{
-						
-					}
-					var index = character.GetIndexForType(execution.itemType); 
-					var item = character.GetItemAt(index);
 
-					character.IncreseItemTurnUsed(index);
-
-					if (character.GetItemTurnsUsed(index) > item.ItemData.MaxUses)
-					{
-						character.RemoveItem(index);
-					}
-					
-					character.ReduceHunger();
-				}
-			}
-		};
-		gameState.addAction(useItemAction);
-
+	private static void fillMoveAction(GameState gameState)
+	{
 		var moveAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.Move,
@@ -71,140 +58,33 @@ public static class ActionsDefinitions
 			}
 		};
 		gameState.addAction(moveAction);
+	}
 
-		var mineAction = new GameState.CharacterAction
-		{
-			Type = GameState.ActionType.Mine,
-			IsProbabilityAction = true,
-			Precondition = (state, execution) =>
-			{
-				var character = state.getCharacterById(execution.InitiatorId);
-				return character.HasItem(Definitions.ItemType.Pickaxe) && character.getCurrentPlace() == Definitions.PlaceType.Mine;
-			},
-			Callback = (state, execution) =>
-			{
-				var character = state.getCharacterById(execution.InitiatorId);
-				var index = character.GetIndexForType(Definitions.ItemType.Pickaxe);
-				character.IncreaseHunger();
-				var item = character.GetItemAt(index);
 
-				character.IncreseItemTurnUsed(index);
-
-				if (character.GetItemTurnsUsed(index) > item.ItemData.MaxUses)
-				{
-					character.RemoveItem(index);
-				}
-				
-			}
-
-		};
-		var mineProbailityEffects = new GameState.ProbabilityActionEffect[]
-		{
-			new GameState.ProbabilityActionEffect()
-			{
-				Probability = 0.1f,
-				Callback = (state, execution) =>
-				{
-					var character = state.getCharacterById(execution.InitiatorId);
-					character.IncreaseGold(gameState.AmountMined);
-				}
-			},
-			new GameState.ProbabilityActionEffect()
-			{
-				Probability = 0.9f,
-				Callback = (state, execution) => {}
-			}
-
-		};
-		mineAction.ProbabilityEffects = mineProbailityEffects;
-		gameState.addAction(mineAction);
-
-		var aimAction = new GameState.CharacterAction
-		{
-			Type = GameState.ActionType.AimAt,
-			IsParametricAction = true,
-			Precondition = (state, execution) =>
-			{
-				var character = state.getCharacterById(execution.InitiatorId);
-				return character.HasItem(Definitions.ItemType.Gun);
-			},
-			GetOtherCharacterIdPossibleValues = (state, execution) =>
-			{	
-				var character = state.getCharacterById(execution.InitiatorId);
-				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) => x.Id != character.Id).Select((x) => x.Id);
-			},
-			Callback = (state, execution) =>
-			{
-				var character = state.getCharacterById(execution.InitiatorId);
-				character.IsAimingGun = true;
-				character.CharacterAimedId = execution.otherCharacterId;
-			}	
-		};
-		gameState.addAction(aimAction);
-
-		var shootAction = new GameState.CharacterAction
-		{
-			Type = GameState.ActionType.Shoot,
-			Precondition = (state, execution) =>
-			{	
-				var character = state.getCharacterById(execution.InitiatorId);
-				if (state.GetCharactersInPlace(character.getCurrentPlace()).Count((x) => x.Id == character.CharacterAimedId) == 0)
-				{
-					return false;
-				}
-				return character.IsAimingGun && character.HasItem(Definitions.ItemType.Gun) && character.HasItem(Definitions.ItemType.Ammo);
-			},
-			GetOtherCharacterIdPossibleValues = (state, execution) =>
-			{	
-				var character = state.getCharacterById(execution.InitiatorId);
-				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) => x.Id == character.CharacterAimedId).Select((x) => x.Id);
-			},
-			Callback = (state, execution) =>
-			{
-				var character = state.getCharacterById(execution.InitiatorId);
-				var other = state.getCharacterById(character.CharacterAimedId);
-				other.ReduceHp();
-
-				var index = character.GetIndexForType(Definitions.ItemType.Ammo);
-				character.IncreseItemTurnUsedAndRemoveOnEmpty(index);
-			}	
-		};
-		gameState.addAction(shootAction);
-
-		var holsterAction = new GameState.CharacterAction
-		{
-			Type = GameState.ActionType.Holster,
-			Precondition = (state, execution) =>
-			{	
-				var character = state.getCharacterById(execution.InitiatorId);
-				return character.IsAimingGun;
-			},
-			Callback = (state, execution) =>
-			{
-				var character = state.getCharacterById(execution.InitiatorId);
-				character.IsAimingGun = false;
-			}	
-		};
-		gameState.addAction(holsterAction);
-
+	private static void fillLootAction(GameState gameState)
+	{
 		var lootAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.Loot,
 			IsParametricAction = true,
 			GetOtherCharacterIdPossibleValues = (state, execution) =>
-			{	
+			{
 				var character = state.getCharacterById(execution.InitiatorId);
-				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) => x.isDead()).Select((x) => x.Id);
+				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) => x.isDead() && x.getNumberOfItems() > 0).Select((x) => x.Id);
 			},
 			Callback = (state, execution) =>
 			{
 				var character = state.getCharacterById(execution.InitiatorId);
 				var other = state.getCharacterById(execution.otherCharacterId);
 				state.Loot(character, other);
-			}	
+			}
 		};
-		gameState.addAction(holsterAction);
+		gameState.addAction(lootAction);
+	}
 
+
+	private static void fillBuyAction(GameState gameState)
+	{
 		var buyItemAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.BuyItem,
@@ -215,11 +95,13 @@ public static class ActionsDefinitions
 				return character.getCurrentPlace() == Definitions.PlaceType.Saloon || character.getCurrentPlace() == Definitions.PlaceType.Shop;
 			},
 			GetOtherCharacterIdPossibleValues = (state, execution) =>
-			{	
+			{
+
 				var character = state.getCharacterById(execution.InitiatorId);
-				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) => {
-						return !x.isDead() && x.Id != character.Id && (x.Type == Definitions.CharacterType.SaloonOwner || x.Type == Definitions.CharacterType.ShopOwner);
-					}
+				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) =>
+				{
+					return !x.isDead() && x.Id != character.Id && (x.Type == Definitions.CharacterType.SaloonOwner || x.Type == Definitions.CharacterType.ShopOwner);
+				}
 				).Select((x) => x.Id);
 			},
 			GetItemTypePossibleValues = (state, execution) =>
@@ -239,10 +121,15 @@ public static class ActionsDefinitions
 				other.RemoveItem(index);
 				other.IncreaseGold(item.ItemData.Price);
 				character.ReduceGold(item.ItemData.Price);
-			}	
+			}
+
 		};
 		gameState.addAction(buyItemAction);
+	}
 
+
+	private static void fillMugAction(GameState gameState)
+	{
 		var mugRequestAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.MugRequest,
@@ -274,7 +161,8 @@ public static class ActionsDefinitions
 				{
 					return false;
 				}
-				return true;	
+				return true;
+
 			},
 			Callback = (state, execution) =>
 			{
@@ -287,7 +175,8 @@ public static class ActionsDefinitions
 				request.CallbackAccepted = (state, execution) =>
 				{
 					var character = state.getCharacterById(execution.InitiatorId);
-					var other = state.getCharacterById(character.CharacterAimedId); 
+					var other = state.getCharacterById(character.CharacterAimedId);
+
 					character.IncreaseGold(other.getGold());
 					other.ReduceGold(other.getGold());
 				};
@@ -300,12 +189,12 @@ public static class ActionsDefinitions
 					{
 						return;
 					}
-					if(index < 0)
+					if (index < 0)
 					{
 						return;
 					}
 
-					state.getCharacterById(character.CharacterAimedId).ReduceHp();
+					state.getCharacterById(character.CharacterAimedId).ReduceHp(gunDamage);
 
 					character.IncreseItemTurnUsedAndRemoveOnEmpty(index);
 				};
@@ -318,12 +207,17 @@ public static class ActionsDefinitions
 				character.SendRequest(other, idx);
 				if (character.Type == Definitions.CharacterType.Bandit)
 				{
-					
+
+
 				}
 			}
 		};
 		gameState.addAction(mugRequestAction);
+	}
 
+
+	private static void fillRequestAction(GameState gameState)
+	{
 		var acceptRequestAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.AcceptRequest,
@@ -359,7 +253,8 @@ public static class ActionsDefinitions
 			}
 		};
 		gameState.addAction(refuseRequestAction);
-		
+
+
 		var processRequestAction = new GameState.CharacterAction
 		{
 			Type = GameState.ActionType.ProcessRequest,
@@ -372,7 +267,8 @@ public static class ActionsDefinitions
 			{
 				var character = state.getCharacterById(execution.InitiatorId);
 				var reqId = character.getCurrentRequestId();
-				
+
+
 				var CurrentRequest = state.getRequestInfoById(reqId);
 				if (CurrentRequest.Status == RequestInfo.RequestStatus.Accepted)
 				{
@@ -390,5 +286,169 @@ public static class ActionsDefinitions
 		gameState.addAction(processRequestAction);
 	}
 
-	
+
+	private static void fillUseItemActions(GameState gameState)
+	{
+		var useItemAction = new GameState.CharacterAction
+		{
+			Type = GameState.ActionType.UseItemOnSelf,
+			IsParametricAction = true,
+			GetItemTypePossibleValues = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				return character.getAllItemData().Where((x) => x.Type == Definitions.ItemType.Food).Select((x) => x.Type);
+
+			},
+			Callback = (state, execution) =>
+			{
+				if (execution.itemType == Definitions.ItemType.Food)
+				{
+					var character = state.getCharacterById(execution.InitiatorId);
+					var index = character.GetIndexForType(execution.itemType);
+
+					var item = character.GetItemAt(index);
+
+					character.IncreseItemTurnUsed(index);
+
+					if (character.GetItemTurnsUsed(index) > item.ItemData.MaxUses)
+					{
+						character.RemoveItem(index);
+					}
+
+
+					character.ReduceHunger(foodHungerReduction);
+				}
+			}
+		};
+		gameState.addAction(useItemAction);
+
+
+		var mineAction = new GameState.CharacterAction
+		{
+			Type = GameState.ActionType.Mine,
+			IsProbabilityAction = true,
+			Precondition = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				return character.HasItem(Definitions.ItemType.Pickaxe) && character.getCurrentPlace() == Definitions.PlaceType.Mine;
+			},
+			Callback = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				var index = character.GetIndexForType(Definitions.ItemType.Pickaxe);
+				character.IncreaseHunger();
+				var item = character.GetItemAt(index);
+
+				character.IncreseItemTurnUsed(index);
+
+				if (character.GetItemTurnsUsed(index) > item.ItemData.MaxUses)
+				{
+					character.RemoveItem(index);
+				}
+
+
+			}
+
+		};
+		var mineProbailityEffects = new GameState.ProbabilityActionEffect[]
+		{
+			new GameState.ProbabilityActionEffect()
+			{
+				Probability = 0.1f,
+				Callback = (state, execution) =>
+				{
+					var character = state.getCharacterById(execution.InitiatorId);
+					character.IncreaseGold(gameState.AmountMined);
+				}
+			},
+			new GameState.ProbabilityActionEffect()
+			{
+				Probability = 0.9f,
+				Callback = (state, execution) => {}
+			}
+
+		};
+		mineAction.ProbabilityEffects = mineProbailityEffects;
+		gameState.addAction(mineAction);
+	}
+
+
+	private static void fillGunActions(GameState gameState)
+	{
+		var aimAction = new GameState.CharacterAction
+		{
+			Type = GameState.ActionType.AimAt,
+			IsParametricAction = true,
+			Precondition = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				return character.HasItem(Definitions.ItemType.Gun);
+			},
+			GetOtherCharacterIdPossibleValues = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) => x.Id != character.Id).Select((x) => x.Id);
+			},
+			Callback = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				character.IsAimingGun = true;
+				character.CharacterAimedId = execution.otherCharacterId;
+			}
+		};
+		gameState.addAction(aimAction);
+
+		var shootAction = new GameState.CharacterAction
+		{
+			Type = GameState.ActionType.Shoot,
+			IsParametricAction = true,
+			Precondition = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				if (!character.IsAimingGun)
+				{
+					return false;
+				}
+				if (state.GetCharactersInPlace(character.getCurrentPlace()).Count((x) => x.Id == character.CharacterAimedId) == 0)
+				{
+					return false;
+				}
+				return character.HasItem(Definitions.ItemType.Gun) && character.HasItem(Definitions.ItemType.Ammo);
+			},
+			GetOtherCharacterIdPossibleValues = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				return state.GetCharactersInPlace(character.getCurrentPlace()).Where((x) => x.Id == character.CharacterAimedId).Select((x) => x.Id);
+			},
+			Callback = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				var other = state.getCharacterById(character.CharacterAimedId);
+				other.ReduceHp(gunDamage);
+
+				var index = character.GetIndexForType(Definitions.ItemType.Ammo);
+				character.IncreseItemTurnUsedAndRemoveOnEmpty(index);
+			}
+		};
+		gameState.addAction(shootAction);
+
+		var holsterAction = new GameState.CharacterAction
+		{
+			Type = GameState.ActionType.Holster,
+			Precondition = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				return character.IsAimingGun;
+			},
+			Callback = (state, execution) =>
+			{
+				var character = state.getCharacterById(execution.InitiatorId);
+				character.IsAimingGun = false;
+			}
+		};
+		gameState.addAction(holsterAction);
+
+	}
+
+
 }

@@ -210,15 +210,15 @@ public class CharacterInfo
 		OnStatsChanged?.Invoke();
     }
 
-    public void ReduceHunger()
+    public void ReduceHunger(int amount)
     {
-        Hunger = Math.Clamp(Hunger - 1, 0, MaxHungerLevel);
+        Hunger = Math.Clamp(Hunger - amount, 0, MaxHungerLevel);
 		OnStatsChanged?.Invoke();
     }
 
-    public void IncreaseHunger()
+    public void IncreaseHunger(int amount=1)
     {
-        Hunger = Math.Clamp(Hunger + 1, 0, MaxHungerLevel);
+        Hunger = Math.Clamp(Hunger + amount, 0, MaxHungerLevel);
 		OnStatsChanged?.Invoke();
     }
 
@@ -250,7 +250,7 @@ public class CharacterInfo
     {
         foreach (ItemSlotInfo item in Inventory)
         {
-            if (item.ItemData.Type == type)
+            if (item.used && item.ItemData.Type == type)
                 return true;
         }
 
@@ -324,7 +324,7 @@ public class CharacterInfo
 
 	public void RemoveItem(int index)
     {
-		Debug.Assert(Inventory[index].used);
+		//Debug.Assert(Inventory[index].used);
 		Inventory[index] = Inventory[index] with {used = false, TurnsUsed = 0};
 
 		OnStatsChanged?.Invoke();
@@ -361,6 +361,19 @@ public class CharacterInfo
     {
         return Inventory;
     }
+
+	public void clearInventory()
+	{
+		for (int i = 0; i < Inventory.Length; i++)
+		{
+			RemoveItem(i);
+		}
+	}
+
+	public int getNumberOfItems()
+	{
+		return Inventory.Count((x) => x.used);
+	}
 
 	public void AddItemList(IEnumerable<ItemSlotInfo> items)
     {
