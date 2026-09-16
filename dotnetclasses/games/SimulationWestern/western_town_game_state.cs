@@ -136,16 +136,15 @@ public class GameState
 	public GameState getDuplicated()
 	{
 		var new_state = new GameState();
-		new_state.PlacesGraph = PlacesGraph;
 		Characters.ForEach(c => new_state.Characters.Add(c.getDuplicated()));
 		new_state.OnTurnCompleted = this.OnTurnCompleted;
 		new_state.CurrentCharacterToProcess = this.CurrentCharacterToProcess;
 		new_state.CurrentTurn = this.CurrentTurn;
 		new_state.CurrentRequestId = this.CurrentRequestId;
+		new_state.PlacesGraph = this.PlacesGraph;
 
 		this.Requests.CopyTo(new_state.Requests, 0);
 		this.availableActions.CopyTo(new_state.availableActions, 0);
-		new_state.PlacesGraph = this.PlacesGraph;
 
 		return new_state;
 	}
@@ -324,10 +323,15 @@ public class GameState
 			
 		}
 
+		var actionsFound = false;
 		for (int i=0; i < availableActions.Length; i++)
 		{
 			var action = availableActions[i];
 			if (action.Type == ActionType.Unclassified)
+			{
+				continue;
+			}
+			if (action.Type == ActionType.DoNothing)
 			{
 				continue;
 			}
@@ -344,8 +348,20 @@ public class GameState
 			{
 				continue;
 			}
+			actionsFound = true;
 			yield return execution;
 		}
+		if (!actionsFound)
+		{
+			
+			var doNothing = new CharacterActionExecution
+			{
+				InitiatorId = characterId,
+				ActionType = ActionType.DoNothing
+			};
+			yield return doNothing;
+		}
+
 	}
 
 	public IEnumerable<CharacterActionExecution> expandActionParameter(CharacterActionExecution execution)
@@ -414,7 +430,7 @@ public class GameState
 		return Characters[CurrentCharacterToProcess];
 	}
 
-	public int TurnsToIncreaseHUnger = 3;
+	public int TurnsToIncreaseHUnger = 2;
 
     public void ProcessTurn()
     {

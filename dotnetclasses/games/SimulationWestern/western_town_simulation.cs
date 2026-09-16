@@ -20,7 +20,7 @@ class WesternTownSimulation
 
 	public AI.MultiAgentMCTS<GameState.CharacterAction, CharacterInfo> mcts;
 
-	private int maxExplorationDepth = 7;
+	private int maxExplorationDepth = 10;
 
 	private int maxIterations = 200000;
 
@@ -91,7 +91,7 @@ class WesternTownSimulation
                 PopName(nameList),
                 Definitions.CharacterType.Miner)
                 .SetGold(7)
-				.SetHunger(9)
+				.SetHunger(7)
                 .SetPlace(Definitions.PlaceType.Thuroughfare);
         }
 
@@ -163,6 +163,7 @@ class WesternTownSimulation
 
 	public class BestActionResults
 	{
+		public List<GameState> states;
 		public GameState.CharacterActionExecution action;
 		public List<GameState.CharacterActionExecution> plan;
 		public float bestScore;
@@ -223,6 +224,7 @@ class WesternTownSimulation
 				maxIterations
 				);
 			res.plan = planRes.plan;
+			res.states = planRes.nodes.Select((x) => ((WGameState)x.state).gameState).ToList();
 			res.action = planRes.plan[0];
 			res.bestScore = planRes.bestScore;
 		}

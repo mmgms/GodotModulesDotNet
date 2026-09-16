@@ -64,6 +64,11 @@ public class CharacterInfo
 		return newCharacter;
 	}
 
+	public override String ToString()
+	{
+		return $"Hp: {Hp}, Hunger: {Hunger}, Gold: {Gold}, Place: {CurrentPlace}, IsAming: {IsAimingGun}, CharacterAimed: {CharacterAimedId}, Dead: {Dead}";
+	}
+
 	public bool Equals(CharacterInfo obj)
 	{
 		return Id == obj.Id && Hp == obj.Hp && Dead == obj.Dead && Gold == obj.Gold && Hunger == obj.Hunger && CurrentPlace == obj.CurrentPlace && 

@@ -56,6 +56,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 
 	public class PlanResult
 	{
+		public List<SearchNode> nodes;
 		public List<TAction> plan;
 		public float bestScore;
 	}
@@ -86,30 +87,6 @@ public class SingleAgentPlanner<TAction, TAgent>
 		return plan;
 	}
 
-	// private IEnumerable<SearchNode> expandNodeParametrizedAction(Action<AI.IMultiAgentGameState<TAction, TAgent>> simulateState,
-	// 	 Stack<SearchNode> queue, Func<TAction, IEnumerable<TAction>> expandParametricAction, SearchNode current, TAction action)
-	// {
-	// 	var parameterNode = new SearchNode(NodeType.ParameterExpansion);
-	// 	parameterNode.depth = current.depth;
-	// 	parameterNode.action = action;
-	// 	parameterNode.parent = current;
-	// 	parameterNode.state = current.state;
-	// 	current.children.Add(parameterNode);
-
-	// 	foreach (var parametrizedAction in expandParametricAction(action))
-	// 	{
-	// 		var stateAfterParametrizedAction = current.state.GetNewStatePerMove(parametrizedAction);
-	// 		var maximizerNode = new SearchNode(NodeType.Maximizer);
-	// 		simulateState(stateAfterParametrizedAction);
-	// 		maximizerNode.state = stateAfterParametrizedAction;
-	// 		maximizerNode.depth = current.depth + 1;
-	// 		maximizerNode.action = action;
-	// 		maximizerNode.parent = parameterNode; 
-	// 		parameterNode.children.Add(maximizerNode);
-	// 		yield return maximizerNode;
-	// 	}		
-	// }
-
 	public PlanResult GetPlan(
 		TAgent agent,
 		AI.IMultiAgentGameState<TAction, TAgent> state, 
@@ -117,22 +94,38 @@ public class SingleAgentPlanner<TAction, TAgent>
 		Func<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction> otherAgentsPolicy,
 		Action<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction, int, float> storeValueAction,
 		Func<AI.IMultiAgentGameState<TAction, TAgent>, TAgent, TAction, float> retrieveValueAction,
-		int maxDepth, int maxIterations
+		int maxDepth, int maxIterations, bool bfs=true
 		)
 	{
-		var queue = new Stack<SearchNode>();
+		var queue = new Queue<SearchNode>();
+		var stack = new Stack<SearchNode>();
+		Action<SearchNode> addNode = null;
+		Func<SearchNode> getNode = null;
+		Func<bool> hasNodes = null;
+		if (bfs)
+		{
+			addNode = (x) => queue.Enqueue(x);
+			getNode = () => queue.Dequeue(); 
+			hasNodes = () => queue.Count > 0;
+		}
+		else
+		{
+			addNode = (x) => stack.Push(x);
+			getNode = () => stack.Pop();
+			hasNodes = () => stack.Count > 0;
+		}
 
 		var start = new SearchNode(NodeType.Maximizer, agent);
 		start.state = state.GetDuplicated();
 
-		queue.Push(start);
+		addNode(start);
 
 		var iterations = 0;
 
-		while (queue.Count > 0)
+		while (hasNodes())
 		{
 			iterations += 1;
-			SearchNode current = queue.Pop();
+			SearchNode current = getNode();
 
 			if (current.depth >= maxDepth || iterations > maxIterations)
 			{
@@ -140,17 +133,30 @@ public class SingleAgentPlanner<TAction, TAgent>
 				current.BackPropagate(current.value, current.depth);
 				continue;
 			}
+
 			if (iterations > maxIterations)
 			{
 				continue;
 			}
 
-			var availableMoves = current.state.GetAvailableActions(current.state.GetCurrentExecutingAgent()).ToList();
+			if (current.type == NodeType.ParameterExpansion)
+			{
+				foreach (var parametrizedAction in current.state.ExpandParametricAction(current.action))
+				{
+					var stateAfterParametrizedAction = current.state.GetNewStatePerMove(parametrizedAction);
+					var maximizerNode = new SearchNode(NodeType.Maximizer, agent);
+					SimulateStateUntilAgent(agent, stateAfterParametrizedAction, otherAgentsPolicy, current.state.IsSameAgent);
+					maximizerNode.state = stateAfterParametrizedAction;
+					maximizerNode.depth = current.depth + 1;
+					maximizerNode.action = parametrizedAction;
+					maximizerNode.parent = current; 
+					current.children.Add(maximizerNode);
+					addNode(maximizerNode);		
+				}
+				continue;
+			}
 
-
-			availableMoves = availableMoves
-				.OrderByDescending(x => retrieveValueAction(state, agent, x))
-				.ToList();				
+			var availableMoves = current.state.GetAvailableActions(current.state.GetCurrentExecutingAgent()).OrderByDescending(x => retrieveValueAction(state, agent, x)).ToList();
 
 			foreach (var action in availableMoves)
 			{
@@ -161,20 +167,8 @@ public class SingleAgentPlanner<TAction, TAgent>
 					parameterNode.action = action;
 					parameterNode.parent = current;
 					parameterNode.state = current.state;
-					current.children.Add(parameterNode);
-
-					foreach (var parametrizedAction in current.state.ExpandParametricAction(action))
-					{
-						var stateAfterParametrizedAction = current.state.GetNewStatePerMove(parametrizedAction);
-						var maximizerNode = new SearchNode(NodeType.Maximizer, agent);
-						SimulateStateUntilAgent(agent, stateAfterParametrizedAction, otherAgentsPolicy, current.state.IsSameAgent);
-						maximizerNode.state = stateAfterParametrizedAction;
-						maximizerNode.depth = current.depth + 1;
-						maximizerNode.action = parametrizedAction;
-						maximizerNode.parent = parameterNode; 
-						parameterNode.children.Add(maximizerNode);
-						queue.Push(maximizerNode);		
-					}
+					current.children.Add(parameterNode);					
+					addNode(parameterNode);
 					continue;	
 				}
 
@@ -202,7 +196,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 						maximizerNode.parent = chanceNode; 
 						maximizerNode.state = newStateAfterEffect;
 						chanceNode.children.Add(maximizerNode);
-						queue.Push(maximizerNode);		
+						addNode(maximizerNode);		
 					}
 					continue;
 				}
@@ -216,7 +210,7 @@ public class SingleAgentPlanner<TAction, TAgent>
 				newNode.parent = current;
 				current.children.Add(newNode);
 
-				queue.Push(newNode);
+				addNode(newNode);
 			}
 
 		}
@@ -225,20 +219,28 @@ public class SingleAgentPlanner<TAction, TAgent>
 
 		var plan = new List<TAction>();
 		var res = new PlanResult();
+		var nodes = new List<SearchNode>();
 
 		var temp = start;
 		while (temp.children.Count > 0)
 		{
 			var best = temp.children.MaxBy((x) => x.value);
+
 			if (best.type == NodeType.ParameterExpansion)
 			{
 				temp = best;
+				if (temp.children.Count == 0)
+				{
+					break;
+				}
 				best = temp.children.MaxBy((x) => x.value);
 			}
 			plan.Add(best.action);
+			nodes.Add(best);
 			temp = best;
 		}
 		res.plan = plan;
+		res.nodes = nodes;
 		res.bestScore = start.value;
 		return res;
 	}
