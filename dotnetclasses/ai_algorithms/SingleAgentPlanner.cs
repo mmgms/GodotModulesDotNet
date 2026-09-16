@@ -97,19 +97,19 @@ public class SingleAgentPlanner<TAction, TAgent>
 		int maxDepth, int maxIterations, bool bfs=true
 		)
 	{
-		var queue = new Queue<SearchNode>();
-		var stack = new Stack<SearchNode>();
 		Action<SearchNode> addNode = null;
 		Func<SearchNode> getNode = null;
 		Func<bool> hasNodes = null;
 		if (bfs)
 		{
+			var queue = new Queue<SearchNode>(maxIterations);
 			addNode = (x) => queue.Enqueue(x);
 			getNode = () => queue.Dequeue(); 
 			hasNodes = () => queue.Count > 0;
 		}
 		else
 		{
+			var stack = new Stack<SearchNode>(maxIterations);
 			addNode = (x) => stack.Push(x);
 			getNode = () => stack.Pop();
 			hasNodes = () => stack.Count > 0;
