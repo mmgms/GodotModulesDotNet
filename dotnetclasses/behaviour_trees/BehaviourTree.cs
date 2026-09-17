@@ -14,20 +14,55 @@ public interface INode
 	{
 		
 	}
+
+	public String getDebugString()
+	{
+		return getName();
+	}
+	public String getName();
+
+	public static String getDecoratorDebugString(INode self, INode child)
+	{
+		return self.getName() + $"[ul]{child.getDebugString()}[/ul]";
+	}
+
+	public static String getSequenceDebugString(INode self, List<INode> children, int idxRunning)
+	{
+		var debugString = $"{self.getName()}:";
+		for (int i = 0; i < children.Count; i++)
+		{
+			if (i == idxRunning)
+			{
+				debugString += $"[ul][color=green]{children[i].getDebugString()}[/color][/ul]";
+			}
+			else
+			{
+				debugString += $"[ul]{children[i].getName()}[/ul]";
+			}
+		}
+		return debugString;
+	}
 }
 
 public class Task: INode
 {
 	Func<float, Status> tickFunc;
+	String name;
 
-	public Task(Func<float, Status> tickFunc)
+	public Task(Func<float, Status> tickFunc, String name)
 	{
 		this.tickFunc = tickFunc;
+		this.name = name;
 	}
 
 	public Status tick(float delta)
 	{
 		return tickFunc(delta);
+	}
+
+	public String getName()
+	{
+		return $"Task: {name}";
 	}
 }
 
@@ -36,22 +71,24 @@ public class Wait: INode
 	float timeToWait;
 	float timePassed;
 	Func<float> getTimeToWait;
+	String name;
 
-	public Wait(Func<float> getTimeToWait)
+	public Wait(Func<float> getTimeToWait, String name)
 	{
 		this.timePassed = 0.0f;
 		this.getTimeToWait = getTimeToWait;
 		this.timeToWait = getTimeToWait();
+		this.name = name;
 	}
 
 	public static Wait Constant(float time)
 	{
-		return new Wait(() => time);
+		return new Wait(() => time, "Wait");
 	}
 
 	public static Wait Random(float minTime, float maxTime)
 	{
-		return new Wait(() => GenericUtils.RandomUtils.range(System.Random.Shared, minTime, maxTime));
+		return new Wait(() => GenericUtils.RandomUtils.range(System.Random.Shared, minTime, maxTime), "RandomWait");
 	}
 
 	public Status tick(float delta)
@@ -68,6 +105,11 @@ public class Wait: INode
 	public void abort()
 	{
 		timePassed = 0.0f;
+	}
+
+	public String getName()
+	{
+		return $"{name}: {timePassed:0.00}/{timeToWait:0.00}";
 	}
 }
 
@@ -116,6 +158,16 @@ public class Cooldown: INode
 		timerStarted = false;
 		timePassed = 0.0f;
 	}
+	
+	public String getName()
+	{
+		return $"CoolDown: {timePassed:0.00}/{cooldown:0.00}";
+	}
+
+	public String getDebugString()
+	{
+		return INode.getDecoratorDebugString(this, child);  
+	}
 }
 
 /// <summary>
@@ -159,42 +211,54 @@ public class RepeatTimesUntilSuccess: INode
 		child.abort();
 		timesRepeated = 0;
 	}
+	
+	public String getName()
+	{
+		return $"RepeatUntilSuccess: {timesRepeated}/{maxTimes}";
+	}
+
+	public String getDebugString()
+	{
+		return INode.getDecoratorDebugString(this, child);  
+	}
 }
 
 public class Decorator: INode
 {
-	INode child; 
+	INode child;
 	Func<Status, Status> childStatusProcessor;
+	String name;
 
-	public Decorator(INode child, Func<Status, Status> childStatusProcessor)
+	public Decorator(INode child, Func<Status, Status> childStatusProcessor, String name)
 	{
 		this.child = child;
 		this.childStatusProcessor = childStatusProcessor;
+		this.name = name;
 	}
 
 	public static Decorator Succeder(INode child)
 	{
-		return new Decorator(child, (x) => Status.Success);
+		return new Decorator(child, (x) => Status.Success, "Succeder");
 	}
 
 	public static Decorator Failer(INode child)
 	{
-		return new Decorator(child, (x) => Status.Failure);
+		return new Decorator(child, (x) => Status.Failure, "Failer");
 	}
 	
 	public static Decorator Inverter(INode child)
 	{
-		return new Decorator(child, (x) => x == Status.Failure ? Status.Success : Status.Failure);
+		return new Decorator(child, (x) => x == Status.Failure ? Status.Success : Status.Failure, "Inverter");
 	}
 
 	public static Decorator UntilFail(INode child)
 	{
-		return new Decorator(child, (x) => x == Status.Failure ? Status.Success : Status.Running);
+		return new Decorator(child, (x) => x == Status.Failure ? Status.Success : Status.Running, "UntilFail");
 	}
 
 	public static Decorator UntilSuccess(INode child)
 	{
-		return new Decorator(child, (x) => x == Status.Failure ? Status.Running : Status.Success);
+		return new Decorator(child, (x) => x == Status.Failure ? Status.Running : Status.Success, "UntilSuccess");
 	}
 
 	public Status tick(float delta)
@@ -211,6 +275,16 @@ public class Decorator: INode
 	{
 		child.abort();
 	}
+
+	public String getName()
+	{
+		return $"{name}";
+	}
+
+	public String getDebugString()
+	{
+		return INode.getDecoratorDebugString(this, child);  
+	}
 }
 
 public class NonReactive: INode
@@ -219,27 +293,29 @@ public class NonReactive: INode
 	Func<Status> onOutOfNodes;
 	Func<Status> onChildFailure;
 	Func<Status> onChildSuccess;
+	String name;
 
 	private int currentChildIdx = -1;
 
-	public NonReactive(List<INode> children, Func<Status> onOutOfNodes, Func<Status> onChildFailure, Func<Status> onChildSuccess)
+	public NonReactive(List<INode> children, Func<Status> onOutOfNodes, Func<Status> onChildFailure, Func<Status> onChildSuccess, String name)
 	{
 		Debug.Assert(children.Count > 0);
 		this.children = children;
 		this.onChildFailure = onChildFailure;
 		this.onChildSuccess = onChildSuccess;
 		this.onOutOfNodes = onOutOfNodes;
+		this.name = name;
 		currentChildIdx = 0;
 	}
 
 	public static NonReactive Sequence(List<INode> children)
 	{
-		return new NonReactive(children, () => Status.Success, () => Status.Failure, () => Status.Running);
+		return new NonReactive(children, () => Status.Success, () => Status.Failure, () => Status.Running, "Sequence");
 	}
 
 	public static NonReactive Selector(List<INode> children)
 	{
-		return new NonReactive(children, () => Status.Failure, () => Status.Running, () => Status.Success);
+		return new NonReactive(children, () => Status.Failure, () => Status.Running, () => Status.Success, "Selector");
 	}
 
 
@@ -288,6 +364,16 @@ public class NonReactive: INode
 		children[currentChildIdx].abort();
 		currentChildIdx = 0;
 	}
+
+	public String getName()
+	{
+		return $"NonReactive{name}";
+	}	
+
+	public String getDebugString()
+	{
+		return INode.getSequenceDebugString(this, children, currentChildIdx);  
+	}
 }
 
 
@@ -298,25 +384,27 @@ public class Reactive: INode
 	Func<Status> onOutOfNodes;
 	Func<Status> onChildFailure;
 	Func<Status> onChildSuccess;
+	String name;
 
 
-	public Reactive(List<INode> children, Func<Status> onOutOfNodes, Func<Status> onChildFailure, Func<Status> onChildSuccess)
+	public Reactive(List<INode> children, Func<Status> onOutOfNodes, Func<Status> onChildFailure, Func<Status> onChildSuccess, String name)
 	{
 		Debug.Assert(children.Count > 0);
 		this.onChildFailure = onChildFailure;
 		this.onChildSuccess = onChildSuccess;
 		this.onOutOfNodes = onOutOfNodes;
 		this.children = children;
+		this.name = name;
 	}
 
 	public static NonReactive Sequence(List<INode> children)
 	{
-		return new NonReactive(children, () => Status.Success, () => Status.Failure, () => Status.Running);
+		return new NonReactive(children, () => Status.Success, () => Status.Failure, () => Status.Running, "Sequence");
 	}
 
 	public static NonReactive Selector(List<INode> children)
 	{
-		return new NonReactive(children, () => Status.Failure, () => Status.Running, () => Status.Success);
+		return new NonReactive(children, () => Status.Failure, () => Status.Running, () => Status.Success, "Selector");
 	}
 
 	public Status tick(float delta)
@@ -390,6 +478,16 @@ public class Reactive: INode
 			children[runningChildIdx].abort();
 		}
 		runningChildIdx = -1;
+	}
+
+	public String getName()
+	{
+		return $"Reactive{name}";
+	}
+	
+	public String getDebugString()
+	{
+		return INode.getSequenceDebugString(this, children, runningChildIdx);  
 	}
 }
 
@@ -466,6 +564,21 @@ public class Parallel: INode
 		{
 			child.abort();
 		}
+	}
+
+	public String getName()
+	{
+		return $"Parallel[SuccessPolicy: {successPolicy}, FailurePolicy: {failurePolicy}]";
+	}
+	
+	public String getDebugString()
+	{
+		var debugString = $"{getName()}:";
+		for (int i = 0; i < children.Count; i++)
+		{
+			debugString += $"[ul]{children[i].getDebugString()}[/ul]";
+		}
+		return debugString;
 	}
 
 }
