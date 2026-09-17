@@ -22,6 +22,7 @@ public interface IState
 	public void onExit();
 	public void onProcess(float delta);
 	public HandlingResult handleEvent(Event hsmEvent);
+	public String getDebugString();
 }
 
 public struct Event
@@ -111,6 +112,11 @@ public class AtomicState: IState
 	{
 		callbacks.onHandleEvent(hsmEvent);
 		return HandlingResult.Unhandled;
+	}
+
+	public String getDebugString()
+	{
+		return name;
 	}
 }
 
@@ -251,6 +257,23 @@ public class CompoundState: IState
 		return HandlingResult.Unhandled;
 	}
 
+	public String getDebugString()
+	{
+		var debugString = $"{name}:";
+		foreach (var child in childrenDict)
+		{
+			if (child.Key == currentStateId)
+			{
+				debugString += $"[ul][color=green](Running){child.Value.getDebugString()}[/color][/ul]";
+			}
+			else
+			{
+				debugString += $"[ul]{child.Value.getId()}[/ul]";
+			}
+		}
+		return debugString;
+	}
+
 	private void processTransition(int id)
 	{
 		var transition = transitions[id];
@@ -319,5 +342,16 @@ public class ParallelState: IState
 			child.handleEvent(hsmEvent);
 		}
 		return HandlingResult.Unhandled;
+	}
+
+	public String getDebugString()
+	{
+		var debugString = $"{name}:";
+		foreach (var child in childrenDict)
+		{
+			debugString += $"[ul]{child.Value.getDebugString()}[/ul]";
+		
+		}
+		return debugString;
 	}
 }

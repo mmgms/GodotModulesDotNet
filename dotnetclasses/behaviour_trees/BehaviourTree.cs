@@ -107,7 +107,7 @@ public class Cooldown: INode
 		}
 		
 		timerStarted = true;
-		return ret;
+		return Status.Failure;
 
 	}
 	public void abort()
@@ -115,6 +115,45 @@ public class Cooldown: INode
 		child.abort();
 		timerStarted = false;
 		timePassed = 0.0f;
+	}
+}
+
+/// <summary>
+/// The Limiter node executes its RUNNING child a specified number of times (x). 
+/// When the maximum number of ticks is reached, it returns a FAILURE status code.
+/// The limiter resets its counter after its child returns either SUCCESS or FAILURE.
+/// </summary>
+public class Limiter: INode
+{
+	INode child; 
+	float maxTimes;
+	int timesRepeated;
+	
+	public Limiter(INode child, int times)
+	{
+		this.child = child;
+		this.maxTimes = times;
+	}
+	public Status tick(float delta)
+	{
+		var ret = child.tick(delta);
+		if (ret == Status.Running)
+		{
+			timesRepeated += 1;
+			if (timesRepeated >= maxTimes)
+			{
+				return Status.Failure;
+			}
+			return ret;
+		}
+		timesRepeated = 0;
+		return ret;
+
+	}
+	public void abort()
+	{
+		child.abort();
+		timesRepeated = 0;
 	}
 }
 
