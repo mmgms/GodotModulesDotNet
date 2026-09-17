@@ -263,3 +263,61 @@ public class CompoundState: IState
 		}
 	}
 }
+
+public class ParallelState: IState
+{
+	String name;
+	Dictionary<String, IState> childrenDict;
+	StateCallbacks callbacks;
+	public ParallelState(String name, List<IState> children, StateCallbacks callbacks=null)
+	{
+		Debug.Assert(children.Count > 0);
+		Debug.Assert(children.GroupBy((x) => x.getId()).Count() == children.Count);
+		
+		childrenDict = new Dictionary<string, IState>();
+
+		this.name = name;
+		children.ForEach((x) => childrenDict[x.getId()] = x);
+		this.callbacks = callbacks;
+		this.callbacks ??= new StateCallbacks();
+		
+	}
+	public String getId()
+	{
+		return name;
+	}
+	public void onEnter(EnterInfo info)
+	{
+		callbacks.onEnter();
+		foreach (var child in childrenDict.Values)
+		{
+			child.onEnter(info);
+		}
+
+	}
+	public void onExit()
+	{
+		callbacks.onExit();
+		foreach (var child in childrenDict.Values)
+		{
+			child.onExit();
+		}
+	}
+	public void onProcess(float delta)
+	{
+		callbacks.onProcess(delta);
+		foreach (var child in childrenDict.Values)
+		{
+			child.onProcess(delta);
+		}
+	}
+	public HandlingResult handleEvent(Event hsmEvent)
+	{
+		callbacks.onHandleEvent(hsmEvent);
+		foreach (var child in childrenDict.Values)
+		{
+			child.handleEvent(hsmEvent);
+		}
+		return HandlingResult.Unhandled;
+	}
+}

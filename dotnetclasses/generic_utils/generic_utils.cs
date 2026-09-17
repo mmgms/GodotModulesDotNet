@@ -25,6 +25,15 @@ public static class EnumerableUtils
 	}
 }
 
+public static class RandomUtils
+{
+	public static float range(Random random, float min, float max)
+	{
+		float value = random.NextSingle() * (max - min) + min;
+		return value;
+	}
+}
+
 public static class ListUtils
 {
 
