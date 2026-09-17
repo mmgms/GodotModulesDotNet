@@ -119,17 +119,17 @@ public class Cooldown: INode
 }
 
 /// <summary>
-/// The Limiter node executes its RUNNING child a specified number of times (x). 
+/// The RepeatTimesUntilSuccess node executes its child a specified number of times (x). 
 /// When the maximum number of ticks is reached, it returns a FAILURE status code.
-/// The limiter resets its counter after its child returns either SUCCESS or FAILURE.
+/// The RepeatTimesUntilSuccess resets its counter after its child returns either SUCCESS or FAILURE.
 /// </summary>
-public class Limiter: INode
+public class RepeatTimesUntilSuccess: INode
 {
 	INode child; 
 	float maxTimes;
 	int timesRepeated;
 	
-	public Limiter(INode child, int times)
+	public RepeatTimesUntilSuccess(INode child, int times)
 	{
 		this.child = child;
 		this.maxTimes = times;
@@ -139,16 +139,20 @@ public class Limiter: INode
 		var ret = child.tick(delta);
 		if (ret == Status.Running)
 		{
-			timesRepeated += 1;
-			if (timesRepeated >= maxTimes)
-			{
-				return Status.Failure;
-			}
 			return ret;
 		}
-		timesRepeated = 0;
-		return ret;
-
+		if (ret == Status.Success)
+		{
+			timesRepeated = 0;
+			return ret;
+		}
+		timesRepeated += 1;
+		if (timesRepeated >= maxTimes)
+		{
+			timesRepeated = 0;
+			return Status.Failure;
+		}
+		return Status.Running;
 	}
 	public void abort()
 	{
@@ -161,6 +165,7 @@ public class Decorator: INode
 {
 	INode child; 
 	Func<Status, Status> childStatusProcessor;
+
 	public Decorator(INode child, Func<Status, Status> childStatusProcessor)
 	{
 		this.child = child;
@@ -180,6 +185,16 @@ public class Decorator: INode
 	public static Decorator Inverter(INode child)
 	{
 		return new Decorator(child, (x) => x == Status.Failure ? Status.Success : Status.Failure);
+	}
+
+	public static Decorator UntilFail(INode child)
+	{
+		return new Decorator(child, (x) => x == Status.Failure ? Status.Success : Status.Running);
+	}
+
+	public static Decorator UntilSuccess(INode child)
+	{
+		return new Decorator(child, (x) => x == Status.Failure ? Status.Running : Status.Success);
 	}
 
 	public Status tick(float delta)
