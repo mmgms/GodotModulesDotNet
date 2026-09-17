@@ -22,6 +22,8 @@ public class Room
 	public event Deleted OnDeleted;
 	public Color debugColor {get; set;}
 	public String name {get; set;}
+	public bool isRoad {get; set;}
+	public int buildingId {get; set;} = -1;
 	public void delete()
 	{
 		OnDeleted?.Invoke();
@@ -40,6 +42,10 @@ public class RoomObject
 	public Vector2I size {get; set;}
 	public int rotation {get; set;}
 }
+public class Building
+{
+	public String name;
+}
 
 public class Level
 {
@@ -52,11 +58,12 @@ public class Level
 	public Dictionary<int, Room> rooms {get; set;}
 	public Dictionary<int, RoomObject> roomObjects {get; set;}
 	public Dictionary<int, Door> doors {get; set;}
-	
+	public Dictionary<int, Building> buildings {get; set;}
 
 	public int nextRoomId {get; set;}
 	public int nextDoorId {get; set;}
 	public int nextRoomObjectId {get; set;}
+	public int nextBuildingId {get; set;}
 
 	public Level(){}
 
@@ -67,6 +74,7 @@ public class Level
 		rooms = new Dictionary<int, Room>();
 		doors = new Dictionary<int, Door>();
 		roomObjects = new Dictionary<int, RoomObject>();
+		buildings = new Dictionary<int, Building>();
 	}
 
 	public Vector2I getGridSize()
@@ -177,7 +185,19 @@ public class Level
 		return doors.GetValueOrDefault(id, null);
 	}
 
-	public RoomObject GetRoomObject(int id)
+	public int getDoorIdBetweenTiles(Vector2I tileA, Vector2I tileB)
+	{
+		foreach (var door in doors)
+		{
+			if ((door.Value.fromTile == tileA && door.Value.toTile == tileB) ||(door.Value.fromTile == tileB && door.Value.toTile == tileA) )
+			{
+				return door.Key;
+			}
+		}
+		return -1;
+	}
+
+	public RoomObject getRoomObject(int id)
 	{
 		return roomObjects.GetValueOrDefault(id, null);
 	}
@@ -419,11 +439,6 @@ public class Level
 		public int doorId;
 	}
 
-	public class Building
-	{
-		public List<int> rooms;
-	}
-
 	private Dictionary<int, List<RoomConnection>> roomsGraph;
 	private Dictionary<int, List<int>> roomAdjecencyGraph;
 
@@ -469,16 +484,21 @@ public class Level
 		}
 	}
 
-	public IEnumerable<Building> getBuildings()
+	public IEnumerable<int> getBuildingsIds()
 	{
-		var disjointSets = GenericUtils.DisjointSet<int>.FindDisjointSets(rooms.Keys, (roomId) => roomAdjecencyGraph.GetValueOrDefault(roomId, new List<int>()));
-		foreach (var set in disjointSets)
+		//var disjointSets = GenericUtils.DisjointSet<int>.FindDisjointSets(rooms.Keys, (roomId) => roomAdjecencyGraph.GetValueOrDefault(roomId, new List<int>()));
+		return buildings.Keys; 
+	}
+
+	public IEnumerable<int> getRoomIdPerBuilding(int id)
+	{
+		foreach (var room in rooms)
 		{
-			yield return new Building
+			if (room.Value.buildingId == id)
 			{
-				rooms = set.Elements	
-			};
-		} 
+				yield return room.Key;
+			}
+		}
 	}
 
 	public IEnumerable<RoomConnection> getRoomNeighbours(int roomId)
@@ -522,6 +542,10 @@ public class Level
 
 	private bool areRoomsAdjecent(int roomA, int roomB)
 	{
+		if (getRoom(roomA).isRoad || getRoom(roomB).isRoad)
+		{
+			return false;
+		}
 		foreach (var tile in getTilesPerRoom(roomA))
 		{
 			if (tiles.GetNeighbours4(tile.Point).Any((x) => getTile(x).roomId == roomB))
