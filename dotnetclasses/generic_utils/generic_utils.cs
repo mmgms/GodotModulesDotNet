@@ -89,9 +89,9 @@ public static class Drawing
 	}
 }
 
-public static class GraphSearchUtils<T>
+public static class GraphSearchUtils
 {
-	public static List<T> FloodFill(T start, Func<T, IEnumerable<T>> getNeighboursCb)
+	public static List<T> FloodFill<T>(T start, Func<T, IEnumerable<T>> getNeighboursCb)
     {
         var connected = new List<T>();
         var visited = new HashSet<T>();
@@ -114,6 +114,94 @@ public static class GraphSearchUtils<T>
 
         return connected;
     }
+
+	public static List<T> AStar<T>(T start, T goal,
+		Func<T, IEnumerable<T>> getNeighbours,
+		EqualityComparer<T> nodesComparer,
+		Func<T, T, float> computeCost,
+		Func<T, T, float> estimateCost,
+		bool allowPartialPath = false)
+	{
+		var path = new List<T>();
+
+		var openSet = new HashSet<T>(nodesComparer)
+		{
+			start
+		};
+
+		var cameFrom = new Dictionary<T, T>(nodesComparer);
+		var gScore = new Dictionary<T, float>(nodesComparer)
+		{
+			[start] = 0.0f
+		};
+
+		var fScore = new Dictionary<T, float>(nodesComparer)
+		{
+			[start] = estimateCost(start, goal)
+		};
+
+		T closestNode = start;
+		var shortestDistance = float.PositiveInfinity;
+
+		while (openSet.Count > 0)
+		{
+			T current = openSet.MaxBy((x) => - fScore.GetValueOrDefault(x, float.PositiveInfinity));
+
+			var distance = estimateCost(current, goal);
+
+			if (distance < shortestDistance)
+			{
+				shortestDistance = distance;
+				closestNode = current;
+			}
+
+			if (nodesComparer.Equals(current, goal))
+			{
+				return ReconstructPath(cameFrom, current);
+			}
+			openSet.Remove(current);
+
+			foreach (var neigh in getNeighbours(current))
+			{
+				var currentGScore = gScore.GetValueOrDefault(current, float.PositiveInfinity);
+
+				var tentativeGScore = currentGScore + computeCost(current, neigh);
+
+				var neighbourGScore = gScore.GetValueOrDefault(neigh, float.PositiveInfinity);
+
+				if (tentativeGScore < neighbourGScore)
+				{
+					cameFrom[neigh] = current;
+					gScore[neigh] = tentativeGScore;
+
+					fScore[neigh] = tentativeGScore + estimateCost(neigh, goal);
+
+					openSet.Add(neigh);
+				}
+			}
+		}
+
+		if (allowPartialPath)
+		{
+			var partialPath = ReconstructPath(cameFrom, closestNode);
+			return partialPath;
+		}
+
+		return path;
+	}
+	private static List<T> ReconstructPath<T>(Dictionary<T, T> cameFrom, T current)
+	{
+		var path = new List<T> { current };
+
+		while (cameFrom.TryGetValue(current, out var previous))
+		{
+			current = previous;
+			path.Add(current);
+		}
+
+		path.Reverse();
+		return path;
+	}
 }
 
 public class DisjointSet<T>
@@ -132,7 +220,7 @@ public class DisjointSet<T>
             if (labeledElements.ContainsKey(elem))
                 continue;
 
-            var connected = GraphSearchUtils<T>.FloodFill(elem, getNeighboursCb);
+            var connected = GraphSearchUtils.FloodFill<T>(elem, getNeighboursCb);
 
             foreach (var x in connected) labeledElements[x] = currentSetTag;
 

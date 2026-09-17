@@ -191,7 +191,7 @@ public class Level
 	{
 		Debug.Assert(tiles.IsInBounds(idx));
 		var roomId = tiles[idx].roomId;
-		return GenericUtils.GraphSearchUtils<Vector2I>.FloodFill(idx, (x) => getRoomTileNeighbours(x, roomId));
+		return GenericUtils.GraphSearchUtils.FloodFill<Vector2I>(idx, (x) => getRoomTileNeighbours(x, roomId));
 	}
 
 
