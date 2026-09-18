@@ -536,8 +536,19 @@ public class Level
 		public int doorId;
 	}
 
+	public struct BuildingConnection
+	{
+		public enum ConnectionType {Door, Road}
+		public int toBuilding;
+		public ConnectionType type;
+		public int doorId;
+	}
+
 	private Dictionary<int, List<RoomConnection>> roomsGraph;
 	private Dictionary<int, List<int>> roomAdjecencyGraph;
+
+	private Dictionary<int, List<BuildingConnection>> buildingsGraph;
+	private Dictionary<int, List<int>> buildingAdjcencyGraph;
 
 	public void cacheRoomsGraph()
 	{
@@ -571,15 +582,65 @@ public class Level
 				}
 				if (areRoomsAdjecent(otherId, roomId))
 				{
-					if (!roomAdjecencyGraph.ContainsKey(roomId))
+					if (!roomAdjecencyGraph.TryGetValue(roomId, out List<int> value))
 					{
-						roomAdjecencyGraph[roomId] = new List<int>();
+						value = new List<int>();
+						roomAdjecencyGraph[roomId] = value;
 					}
-					roomAdjecencyGraph[roomId].Add(otherId);
+
+					value.Add(otherId);
 				}
 			}
 		}
 	}
+
+	public void cacheBuildingGraph()
+	{
+		cacheRoomsGraph();
+		cacheRoomAdjacencyGraph();
+		buildingsGraph = new Dictionary<int, List<BuildingConnection>>();
+		foreach (var buildingId in buildings.Keys)
+		{
+			foreach (var otherBuildingId in buildings.Keys)
+			{
+				if (otherBuildingId == buildingId)
+				{
+					continue;
+				}
+				foreach(var conn in getBuildingConnection(buildingId, otherBuildingId))
+				{	
+					addBuildingConnection(buildingId, conn, false);
+				}
+			}
+		}
+	}
+
+	public void cacheBuildingAdjecencyGraph()
+	{
+		cacheRoomAdjacencyGraph();
+		buildingAdjcencyGraph = new Dictionary<int, List<int>>();
+		foreach (var buildingId in buildings.Keys)
+		{
+			foreach (var otherBuildingId in buildings.Keys)
+			{
+				if (otherBuildingId == buildingId)
+				{
+					continue;
+				}
+				if (areBuildingAdjacent(otherBuildingId, buildingId))
+				{
+					if (!buildingAdjcencyGraph.TryGetValue(buildingId, out List<int> value))
+					{
+						value = new List<int>();
+						buildingAdjcencyGraph[buildingId] = value;
+					}
+
+					value.Add(otherBuildingId);
+				}
+			}
+		}
+	}
+
 
 	public IEnumerable<int> getBuildingsIds()
 	{
@@ -611,16 +672,47 @@ public class Level
 		}
 	}
 
+	public IEnumerable<BuildingConnection> getBuildingNeighBours(int buildingId)
+	{
+		if (!buildingsGraph.TryGetValue(buildingId, out List<BuildingConnection> value))
+		{
+			yield break;
+		}
+
+		foreach (var connection in value)
+		{
+			yield return connection;
+		}
+	}
+
 	private void addRoomsConnection(int roomA, int roomB, int doorId, bool bidirectional=true)
 	{
-		if (!roomsGraph.ContainsKey(roomA))
+		if (!roomsGraph.TryGetValue(roomA, out List<RoomConnection> value))
 		{
-			roomsGraph[roomA] = new List<RoomConnection>();
+			value = new List<RoomConnection>();
+			roomsGraph[roomA] = value;
 		}
-		roomsGraph[roomA].Add(new RoomConnection{toRoom = roomB, doorId=doorId});
+
+		value.Add(new RoomConnection{toRoom = roomB, doorId=doorId});
 		if (bidirectional)
 		{
 			addRoomsConnection(roomB, roomA, doorId, false);
+		}
+	}
+
+	
+	private void addBuildingConnection(int buildingA, BuildingConnection connection, bool bidirectional=true)
+	{
+		if (!buildingsGraph.TryGetValue(buildingA, out List<BuildingConnection> value))
+		{
+			value = new List<BuildingConnection>();
+			buildingsGraph[buildingA] = value;
+		}
+
+		value.Add(connection);
+		if (bidirectional)
+		{
+			addBuildingConnection(connection.toBuilding, connection with {toBuilding=buildingA}, false);
 		}
 	}
 
@@ -651,6 +743,47 @@ public class Level
 			}
 		}
 		return false;
+	}
+
+	private bool areBuildingAdjacent(int buildingA, int buildingB)
+	{
+		foreach (var roomA in getRoomIdPerBuilding(buildingA))
+		{
+			foreach (var roomB in getRoomIdPerBuilding(buildingB))
+			{
+				if (roomAdjecencyGraph.TryGetValue(roomA, out List<int> value) && value.Contains(roomB))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private IEnumerable<BuildingConnection> getBuildingConnection(int buildingA, int buildingB)
+	{
+		foreach (var roomA in getRoomIdPerBuilding(buildingA))
+		{
+			foreach (var roomB in getRoomIdPerBuilding(buildingB))
+			{
+				if(getRoom(roomA).isRoad && getRoom(roomB).isRoad)
+				{
+					
+					yield return new BuildingConnection{toBuilding = buildingB, type = BuildingConnection.ConnectionType.Road};
+					continue;
+				}
+				if (roomsGraph.TryGetValue(roomA, out List<RoomConnection> value))
+				{
+					foreach (var conn in value)
+					{
+						if (conn.toRoom == roomB)
+						{
+							yield return new BuildingConnection{toBuilding = buildingB, doorId = conn.doorId};
+						}
+					}
+				}
+			}
+		}	
 	}
 	
 
