@@ -44,13 +44,22 @@ public class RoomObject
 }
 public class Building
 {
-	public String name;
+	public delegate void Deleted();
+	public event Deleted OnDeleted;
+	public String name {get; set;}
+	public Color debugColor {get; set;}
+	public void delete()
+	{
+		OnDeleted?.Invoke();
+	}
 }
 
 public class Level
 {
 	public delegate void RoomAdded(int id, Room room);
 	public event RoomAdded OnRoomAdded;
+	public delegate void BuildingAdded(int id, Building building);
+	public event BuildingAdded OnBuildingAdded;
 	public delegate void RoomDeleted(int id);
 	public event RoomDeleted OnRoomDeleted;
 	[JsonConverter(typeof(Grid2DJsonConverter<TileInfo>))]
@@ -87,9 +96,30 @@ public class Level
 		return nextRoomId;
 	}
 
+	public int getNextBuildingId()
+	{
+		return nextBuildingId;
+	}
+
 	public int getNextRoomObjectId()
 	{
 		return nextRoomObjectId;
+	}
+
+	public int getBuildingFromTile(Vector2I idx)
+	{
+		var roomId = tiles[idx].roomId; 
+		if (roomId < 0)
+		{
+			return -1;
+		}
+		var buildingId = rooms[roomId].buildingId;
+		if (buildingId < 0)
+		{
+			return -1;
+		}
+		return buildingId;
+
 	}
 
 	public int addNewRoom(int extId=-1, Color? color=null, string name=null)
@@ -151,6 +181,27 @@ public class Level
 		}
 		return id;
 	}
+
+	public int addNewBuilding( int extId = -1, Color? color=null, string name=null)
+	{
+		var id = nextBuildingId;
+		if (extId >= 0)
+		{
+			id = extId;
+		}
+		var building = new Building
+		{
+			debugColor = color != null ? color.Value : GenericUtils.Colors.GetRandomColor(0.5f, 0.7f, 0.5f),
+			name = name != null ? name : ""
+		};
+		buildings[id] = building;
+		if (extId < 0)
+		{
+			nextBuildingId += 1;
+		}
+		OnBuildingAdded?.Invoke(id, building);
+		return id;
+	}
 	
 	public void removeLastAddedRoomObject()
 	{
@@ -166,8 +217,14 @@ public class Level
 	
 	public void removeLastAddedDoor()
 	{
-		removeRoom(nextDoorId - 1);
+		removeDoor(nextDoorId - 1);
 		nextDoorId -= 1;
+	}
+
+	public void removeLastAddedBuilding()
+	{
+		removeBuilding(nextBuildingId - 1);
+		nextBuildingId -= 1;
 	}
 
 	public TileInfo getTile(Vector2I idx)
@@ -183,6 +240,29 @@ public class Level
 	public Door getDoor(int id)
 	{
 		return doors.GetValueOrDefault(id, null);
+	}
+
+	public Building getBuilding(int id)
+	{
+		return buildings.GetValueOrDefault(id, null);
+	}
+
+	public void assignRoomToBuildingId(int roomId, int buildingId)
+	{
+		Debug.Assert(rooms.ContainsKey(roomId));
+		rooms[roomId].buildingId = buildingId;
+	}
+
+	public IEnumerable<int> getAdjecentRooms(int roomId)
+	{
+		if (!roomAdjecencyGraph.ContainsKey(roomId))
+		{
+			yield break;
+		}
+		foreach (var id in roomAdjecencyGraph[roomId])
+		{
+			yield return id;
+		}
 	}
 
 	public int getDoorIdBetweenTiles(Vector2I tileA, Vector2I tileB)
@@ -301,6 +381,12 @@ public class Level
 		doors.Remove(id);
 	}
 
+	public void removeBuilding(int id)
+	{
+		buildings[id].delete();
+		buildings.Remove(id);
+	}
+
 	public void removeRoomObject(int id)
 	{
 		roomObjects.Remove(id);
@@ -309,6 +395,17 @@ public class Level
 	public IEnumerable<Grid2D<TileInfo>.IterData> getTilesPerRoom(int roomId)
 	{
 		return tiles.GetEnumerable().Where((x) => x.Data.roomId == roomId);
+	}
+
+	public IEnumerable<int> getRoomsPerBuilding(int buildingId)
+	{
+		foreach (var room in rooms)
+		{
+			if (room.Value.buildingId == buildingId)
+			{
+				yield return room.Key;
+			}
+		}
 	}
 	
 	public bool canAssigTileToRoom(Vector2I idx, int roomId)
