@@ -6,12 +6,23 @@ namespace Inventories;
 public class LimitedSizeInventory<T>
 {
 	private List<ItemSlot<T>> slots;
-	private class ItemSlot<TItem> 
+	public class ItemSlot<TItem> 
 	{
 		public bool used;
 		public TItem item;
 		public int stackAmount;
 		public int timesUsed;
+
+		public ItemSlot<TItem> clone()
+		{
+			return new ItemSlot<TItem>
+			{
+				used = this.used,
+				item = this.item,
+				stackAmount = this.stackAmount,
+				timesUsed = this.timesUsed
+			};
+		}
 	}
 
 	private EqualityComparer<T> comparer;
@@ -22,12 +33,24 @@ public class LimitedSizeInventory<T>
 	{
 		Debug.Assert(capacity > 0);
 		slots = new List<ItemSlot<T>>(capacity);
-		foreach (var i in Enumerable.Range(0, capacity - 1))
+		foreach (var i in Enumerable.Range(0, capacity))
 		{
 			slots.Add(new ItemSlot<T>
 			{
 				used = false
 			});
+		}
+		this.comparer = comparer;
+		this.getDurability = getDurability;
+		this.getMaxStackAmount = getMaxStackAmount;
+	}
+
+	public LimitedSizeInventory(LimitedSizeInventory<T> initialInventory, EqualityComparer<T> comparer, Func<T, int> getDurability, Func<T, int> getMaxStackAmount)
+	{
+		slots = new List<ItemSlot<T>>(initialInventory.slots.Count);
+		foreach (var i in Enumerable.Range(0, slots.Count))
+		{
+			slots.Add(initialInventory.slots[i].clone());
 		}
 		this.comparer = comparer;
 		this.getDurability = getDurability;
@@ -56,6 +79,18 @@ public class LimitedSizeInventory<T>
 		return slots.Any((x) => x.used && comparer.Equals(item, x.item));
 	}
 
+	public IEnumerable<ItemSlot<T>> getAllSlots()
+	{
+		for (var i=0; i < slots.Count; i++)
+		{
+			var slot = slots[i];
+			if (slot.used)
+			{
+				yield return slot;
+			}
+		}
+	}
+
 	public IEnumerable<int> getSlotIdxForItem(T item)
 	{
 		for (var i=0; i < slots.Count; i++)
@@ -80,6 +115,21 @@ public class LimitedSizeInventory<T>
 		slots[fromIdx] = temp;
 	}
 
+	public IEnumerable<T> getAllAvailableItems()
+	{
+		for (var i = 0; i < slots.Count; i++)
+		{
+			if (!slots[i].used)
+			{
+				continue;
+			}
+			if(!slots.Take(i).Any((x) => comparer.Equals(x.item, slots[i].item)))
+			{
+				yield return slots[i].item;
+			}
+		}
+	}
+
 	public int getStackAmountPerSlot(int i)
 	{
 		return slots[i].stackAmount;
@@ -92,7 +142,7 @@ public class LimitedSizeInventory<T>
 
 	public bool canBeStacked(T item)
 	{
-		return getMaxStackAmount(item) > 1 && getDurability(item) > 0;
+		return getMaxStackAmount(item) > 1 && !(getDurability(item) > 1);
 	}
 
 	public int getFirstAvailableSlot(T item)

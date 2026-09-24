@@ -120,6 +120,7 @@ public static class GraphSearchUtils
 		EqualityComparer<T> nodesComparer,
 		Func<T, T, float> computeCost,
 		Func<T, T, float> estimateCost,
+		Func<T, bool> isGoal = null,
 		bool allowPartialPath = false)
 	{
 		var path = new List<T>();
@@ -155,7 +156,7 @@ public static class GraphSearchUtils
 				closestNode = current;
 			}
 
-			if (nodesComparer.Equals(current, goal))
+			if ((isGoal != null && isGoal(current)) || nodesComparer.Equals(current, goal))
 			{
 				return ReconstructPath(cameFrom, current);
 			}
