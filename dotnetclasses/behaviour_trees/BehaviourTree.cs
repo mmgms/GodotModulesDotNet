@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection.Metadata;
+using System.Text.Json.Nodes;
 
 namespace BT;
 
@@ -20,6 +21,10 @@ public interface INode
 		return getName();
 	}
 	public String getName();
+	
+	public void save(JsonObject json){}
+
+	public void load(JsonObject json){}
 
 	public static String getDecoratorDebugString(INode self, INode child)
 	{
@@ -42,6 +47,7 @@ public interface INode
 		}
 		return debugString;
 	}
+
 }
 
 public class Task: INode
@@ -111,6 +117,19 @@ public class Wait: INode
 	{
 		return $"{name}: {timePassed:0.00}/{timeToWait:0.00}";
 	}
+
+	public void save(JsonObject json)
+	{
+		json["timePassed"] = timePassed;
+		json["timeToWait"] = timeToWait;
+	}
+
+	public void load(JsonObject json)
+	{
+		timePassed = json["timePassed"].GetValue<float>();
+		timeToWait = json["timeToWait"].GetValue<float>();
+	}
+
 }
 
 /// <summary>
@@ -168,6 +187,19 @@ public class Cooldown: INode
 	{
 		return INode.getDecoratorDebugString(this, child);  
 	}
+
+	
+	public void save(JsonObject json)
+	{
+		json["timePassed"] = timePassed;
+		json["timerStarted"] = timerStarted;
+	}
+
+	public void load(JsonObject json)
+	{
+		timePassed = json["timePassed"].GetValue<float>();
+		timerStarted = json["timerStarted"].GetValue<bool>();
+	}
 }
 
 /// <summary>
@@ -220,6 +252,16 @@ public class RepeatTimesUntilSuccess: INode
 	public String getDebugString()
 	{
 		return INode.getDecoratorDebugString(this, child);  
+	}
+
+	public void save(JsonObject json)
+	{
+		json["timesRepeated"] = timesRepeated;
+	}
+
+	public void load(JsonObject json)
+	{
+		timesRepeated = json["timesRepeated"].GetValue<int>();
 	}
 }
 
@@ -284,6 +326,19 @@ public class Decorator: INode
 	public String getDebugString()
 	{
 		return INode.getDecoratorDebugString(this, child);  
+	}
+
+	public void save(JsonObject json)
+	{
+		var childObject = new JsonObject();
+		json["childState"] = childObject;  
+		child.save(childObject);
+	}
+
+	public void load(JsonObject json)
+	{
+		var childObject = json["childState"].AsObject();
+		child.load(childObject);
 	}
 }
 
@@ -373,6 +428,20 @@ public class NonReactive: INode
 	public String getDebugString()
 	{
 		return INode.getSequenceDebugString(this, children, currentChildIdx);  
+	}
+
+	public void save(JsonObject json)
+	{
+		json["currentChildIdx"] = currentChildIdx;
+		var childObject = new JsonObject();
+		json["childState"] = childObject;  
+		children[currentChildIdx].save(childObject);
+	}
+
+	public void load(JsonObject json)
+	{
+		currentChildIdx = json["currentChildIdx"].GetValue<int>();
+		children[currentChildIdx].load(json["childState"].AsObject());
 	}
 }
 
@@ -489,6 +558,20 @@ public class Reactive: INode
 	{
 		return INode.getSequenceDebugString(this, children, runningChildIdx);  
 	}
+
+	public void save(JsonObject json)
+	{
+		json["runningChildIdx"] = runningChildIdx;
+		var childObject = new JsonObject();
+		json["childState"] = childObject;  
+		children[runningChildIdx].save(childObject);
+	}
+
+	public void load(JsonObject json)
+	{
+		runningChildIdx = json["runningChildIdx"].GetValue<int>();
+		children[runningChildIdx].load(json["childState"].AsObject());
+	}
 }
 
 public class Parallel: INode
@@ -579,6 +662,27 @@ public class Parallel: INode
 			debugString += $"[ul]{children[i].getDebugString()}[/ul]";
 		}
 		return debugString;
+	}
+
+	public void save(JsonObject json)
+	{
+		var childrenJson = new JsonArray();
+		foreach (var child in children)
+		{
+			var childObject = new JsonObject();
+			child.save(childObject);
+			childrenJson.Add(childObject);
+		}
+		json["children"] = childrenJson;
+	}
+
+	public void load(JsonObject json)
+	{
+		var childObject = json["children"].AsArray();
+		foreach (var i in Enumerable.Range(0, childObject.Count))
+		{
+			children[i].load(childObject[i].AsObject());
+		}
 	}
 
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text.Json.Nodes;
 
 namespace HSM;
 
@@ -23,6 +24,10 @@ public interface IState
 	public void onProcess(float delta);
 	public HandlingResult handleEvent(Event hsmEvent);
 	public String getDebugString();
+	public void save(JsonObject json){}
+
+	public void load(JsonObject json){}
+
 }
 
 public struct Event
@@ -285,6 +290,20 @@ public class CompoundState: IState
 			transition.takenCallback();
 		}
 	}
+	public void save(JsonObject json)
+	{
+		var childObject = new JsonObject();
+		json["currentStateId"] = currentStateId;
+		childrenDict[currentStateId].save(childObject);
+		json["childState"] = childObject;
+	}
+
+	public void load(JsonObject json)
+	{
+		currentStateId = json["currentStateId"].GetValue<String>();
+		childrenDict[currentStateId].load(json["childState"].AsObject());
+	}
+
 }
 
 public class ParallelState: IState
@@ -354,4 +373,26 @@ public class ParallelState: IState
 		}
 		return debugString;
 	}
+
+	public void save(JsonObject json)
+	{
+		var childrenJson = new JsonArray();
+		foreach (var child in childrenDict)
+		{
+			var childObject = new JsonObject();
+			child.Value.save(childObject);
+			childrenJson[child.Key] = childObject;
+		}
+		json["children"] = childrenJson;
+	}
+
+	public void load(JsonObject json)
+	{
+		var childObject = json["children"].AsObject();
+		foreach (var child in childObject)
+		{
+			childrenDict[child.Key].load(child.Value.AsObject());
+		}
+	}
+
 }
