@@ -29,7 +29,7 @@ public class LimitedSizeInventory<T>
 	private Func<T, int> getDurability;
 	private Func<T, int> getMaxStackAmount;
 
-	public LimitedSizeInventory(int capacity, EqualityComparer<T> comparer, Func<T, int> getDurability, Func<T, int> getMaxStackAmount)
+	public LimitedSizeInventory(int capacity, EqualityComparer<T> comparer, Func<T, int> getDurability, Func<T, int> getMaxStackAmount, List<T> initialInventory=null)
 	{
 		Debug.Assert(capacity > 0);
 		slots = new List<ItemSlot<T>>(capacity);
@@ -43,18 +43,13 @@ public class LimitedSizeInventory<T>
 		this.comparer = comparer;
 		this.getDurability = getDurability;
 		this.getMaxStackAmount = getMaxStackAmount;
-	}
-
-	public LimitedSizeInventory(LimitedSizeInventory<T> initialInventory, EqualityComparer<T> comparer, Func<T, int> getDurability, Func<T, int> getMaxStackAmount)
-	{
-		slots = new List<ItemSlot<T>>(initialInventory.slots.Count);
-		foreach (var i in Enumerable.Range(0, slots.Count))
+		if (initialInventory != null)
 		{
-			slots.Add(initialInventory.slots[i].clone());
+			foreach (var item in initialInventory)
+			{
+				addItem(item, getFirstAvailableSlot(item));
+			}
 		}
-		this.comparer = comparer;
-		this.getDurability = getDurability;
-		this.getMaxStackAmount = getMaxStackAmount;
 	}
 
 	public LimitedSizeInventory<T> getClone()
@@ -84,10 +79,7 @@ public class LimitedSizeInventory<T>
 		for (var i=0; i < slots.Count; i++)
 		{
 			var slot = slots[i];
-			if (slot.used)
-			{
-				yield return slot;
-			}
+			yield return slot;
 		}
 	}
 
@@ -147,7 +139,7 @@ public class LimitedSizeInventory<T>
 
 	public int getFirstAvailableSlot(T item)
 	{ 
-		var firstEmptySlot = Enumerable.Range(0, slots.Count-1).Where((i) => slots[i].used).FirstOrDefault(-1);
+		var firstEmptySlot = Enumerable.Range(0, slots.Count-1).Where((i) => !slots[i].used).FirstOrDefault(-1);
 		if (!canBeStacked(item))
 		{
 			return firstEmptySlot;
@@ -170,6 +162,10 @@ public class LimitedSizeInventory<T>
 		{
 			Debug.Assert((slot.stackAmount + amount ) <= getMaxStackAmount(item));
 		}
+		if (!stackable)
+		{
+			Debug.Assert(amount == 1);
+		}
 		slot.used = true;
 		slot.item = item;
 		slot.timesUsed = 0;
@@ -179,9 +175,13 @@ public class LimitedSizeInventory<T>
 	public void removeItem(int idx)
 	{
 		var slot = slots[idx];
-		slot.used = false;
 		slot.timesUsed = 0;
-		slot.stackAmount = 0;
+		slot.stackAmount -= 1;
+		if (slot.stackAmount <= 0)
+		{
+			slot.stackAmount = 0;
+			slot.used = false;
+		}
 	}
 
 	public bool increaseTimesUsed(int idx)

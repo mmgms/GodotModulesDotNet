@@ -19,6 +19,10 @@ public static class Definitions{
 
 public static class Funtions {
 	
+	public static Vector2 toVec2(Vector2I vec)
+	{
+		return new Vector2(vec.X, vec.Y);
+	}
 
 	public static float Remap(float value, float minIn, float maxIn, float minOut, float maxOut)
 	{
