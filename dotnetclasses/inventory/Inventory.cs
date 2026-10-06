@@ -5,6 +5,8 @@ using System.Linq;
 namespace Inventories;
 public class LimitedSizeInventory<T>
 {
+	public delegate void InventoryChanged();
+	public event InventoryChanged OnInventoryChagend;
 	private List<ItemSlot<T>> slots;
 	public class ItemSlot<TItem> 
 	{
@@ -69,9 +71,19 @@ public class LimitedSizeInventory<T>
 		return newInventory;
 	}
 
+	public int getCapacity()
+	{
+		return slots.Count;
+	}
+
 	public bool hasItem(T item)
 	{
 		return slots.Any((x) => x.used && comparer.Equals(item, x.item));
+	}
+
+	public T getItem(int id)
+	{
+		return slots[id].item;
 	}
 
 	public IEnumerable<ItemSlot<T>> getAllSlots()
@@ -80,6 +92,17 @@ public class LimitedSizeInventory<T>
 		{
 			var slot = slots[i];
 			yield return slot;
+		}
+	}
+	public IEnumerable<int> getSlotIndices(Func<T, bool> filter)
+	{
+		for (var i=0; i < slots.Count; i++)
+		{
+			var slot = slots[i];
+			if (slot.used && filter(slot.item))
+			{
+				yield return i;
+			}
 		}
 	}
 
@@ -105,6 +128,7 @@ public class LimitedSizeInventory<T>
 		var temp = slots[toIdx];
 		slots[toIdx] = slots[fromIdx];
 		slots[fromIdx] = temp;
+		OnInventoryChagend?.Invoke();
 	}
 
 	public IEnumerable<T> getAllAvailableItems()
@@ -170,6 +194,7 @@ public class LimitedSizeInventory<T>
 		slot.item = item;
 		slot.timesUsed = 0;
 		slot.stackAmount += amount;
+		OnInventoryChagend?.Invoke();
 	}
 
 	public void removeItem(int idx)
@@ -182,6 +207,7 @@ public class LimitedSizeInventory<T>
 			slot.stackAmount = 0;
 			slot.used = false;
 		}
+		OnInventoryChagend?.Invoke();
 	}
 
 	public bool increaseTimesUsed(int idx)
@@ -189,6 +215,7 @@ public class LimitedSizeInventory<T>
 		var slot = slots[idx];
 		Debug.Assert(slot.used = true);
 		slot.timesUsed += 1;
+		OnInventoryChagend?.Invoke();
 		return slot.timesUsed > getDurability(slot.item);
 	}
 

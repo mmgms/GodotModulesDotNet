@@ -38,6 +38,11 @@ public struct Event
 		return name.Equals(obj.name);
 	}
 
+	public Event(String name)
+	{
+		this.name = name;
+	}
+
 }
 
 public class StateCallbacks
@@ -162,6 +167,7 @@ public class CompoundState: IState
 		this.callbacks ??= new StateCallbacks();
 		initialStateId = children[0].getId();
 		this.eventToInitialState = eventToInitialState;
+		currentStateId = initialStateId;
 	}
 	public CompoundState addTransition(string stateIdFrom, string stateIdTo, Event? hsmEvent, bool cancellable=true, Func<bool> guard=null, float delay=0.0f, Action takenCallback=null)
 	{
