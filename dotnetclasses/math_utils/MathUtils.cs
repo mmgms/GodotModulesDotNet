@@ -19,6 +19,27 @@ public static class Definitions{
 
 public static class Funtions {
 	
+	public static int getRotationIdx(float rotationRad)
+	{
+		foreach(var i in Enumerable.Range(0, 4))
+		{
+			if (Mathf.IsEqualApprox(Definitions.Rotations[i], rotationRad))
+			{
+				return i;
+			}
+		}
+		return 0;
+	}
+	public static Vector2I getVecIFromRot(int rotation)
+	{
+		return toVec2I(Vector2.Right.Rotated(Definitions.Rotations[rotation]));
+	}
+
+	public static Vector2I toVec2I(Vector2 vec)
+	{
+		return new Vector2I((int)Math.Round(vec.X), (int)Math.Round(vec.Y));
+	}
+
 	public static Vector2 toVec2(Vector2I vec)
 	{
 		return new Vector2(vec.X, vec.Y);

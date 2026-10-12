@@ -250,3 +250,23 @@ public static class EnumUtil {
         return Enum.GetValues(typeof(T)).Cast<T>();
     }
 }
+
+
+public class Stat
+{
+	public delegate void Changed(float value);
+	public event Changed OnChanged;
+	public String name;
+	public float value {get; private set; } 	
+
+	public Stat(float initialValue)
+	{
+		value = initialValue;
+	}
+
+	public void increase(float amount)
+	{
+		value = Math.Clamp(value + amount, 0, 100);
+		OnChanged?.Invoke(value);
+	}
+}
