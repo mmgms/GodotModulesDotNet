@@ -1,5 +1,5 @@
 using Godot;
-
+ 
 public partial class HitBox2D : Area2D
 {
 	public delegate void HitEvent(HitData data);
