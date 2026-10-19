@@ -376,7 +376,7 @@ public class NonReactive: INode
 
 	public Status tick(float delta)
 	{
-		if (currentChildIdx > children.Count)
+		if (currentChildIdx >= children.Count)
 		{
 			currentChildIdx = 0;
 			return onOutOfNodes();
@@ -416,7 +416,10 @@ public class NonReactive: INode
 
 	public void abort()
 	{
-		children[currentChildIdx].abort();
+		if (currentChildIdx < children.Count)
+		{
+			children[currentChildIdx].abort();
+		}
 		currentChildIdx = 0;
 	}
 
@@ -466,14 +469,14 @@ public class Reactive: INode
 		this.name = name;
 	}
 
-	public static NonReactive Sequence(List<INode> children)
+	public static Reactive Sequence(List<INode> children)
 	{
-		return new NonReactive(children, () => Status.Success, () => Status.Failure, () => Status.Running, "Sequence");
+		return new Reactive(children, () => Status.Success, () => Status.Failure, () => Status.Running, "Sequence");
 	}
 
-	public static NonReactive Selector(List<INode> children)
+	public static Reactive Selector(List<INode> children)
 	{
-		return new NonReactive(children, () => Status.Failure, () => Status.Running, () => Status.Success, "Selector");
+		return new Reactive(children, () => Status.Failure, () => Status.Running, () => Status.Success, "Selector");
 	}
 
 	public Status tick(float delta)
@@ -489,7 +492,7 @@ public class Reactive: INode
 					newRunningIdx = i;  
 					break;
 				case Status.Success:
-					var retF = onChildFailure();
+					var retF = onChildSuccess();
 					if (retF == Status.Running)
 					{
 						continue;
@@ -500,7 +503,7 @@ public class Reactive: INode
 						return retF;
 					}
 				case Status.Failure:
-					var retS = onChildSuccess();
+					var retS = onChildFailure();
 					if (retS == Status.Running)
 					{
 						continue;
@@ -534,7 +537,11 @@ public class Reactive: INode
 
 	private void abortLower(int fromIdx)
 	{
-		foreach (var i in Enumerable.Range(fromIdx+1, children.Count - 1))
+		if (fromIdx >= children.Count - 1)
+		{
+			return;
+		}
+		foreach (var i in Enumerable.Range(fromIdx+1, children.Count - fromIdx - 1))
 		{
 			children[i].abort();
 		}

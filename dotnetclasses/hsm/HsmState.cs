@@ -47,10 +47,10 @@ public struct Event
 
 public class StateCallbacks
 {
-	Action onEnterAction;
-	Action onExitAction;
-	Action<Event> onHandleEventAction;
-	Action<float> onProcessAction;
+	public Action onEnterAction;
+	public Action onExitAction;
+	public Action<Event> onHandleEventAction;
+	public Action<float> onProcessAction;
 
 	public StateCallbacks(Action onEnter=null, Action onExit=null, Action<float> onProcess=null, Action<Event> onhandleEvent=null)
 	{

@@ -257,16 +257,18 @@ public class Stat
 	public delegate void Changed(float value);
 	public event Changed OnChanged;
 	public String name;
-	public float value {get; private set; } 	
+	public float value {get; private set; }
+	public float maxValue {get;}
 
-	public Stat(float initialValue)
+	public Stat(float initialValue, float maxValue)
 	{
 		value = initialValue;
+		this.maxValue  = maxValue;
 	}
 
 	public void increase(float amount)
 	{
-		value = Math.Clamp(value + amount, 0, 100);
+		value = Math.Clamp(value + amount, 0, maxValue);
 		OnChanged?.Invoke(value);
 	}
 }
