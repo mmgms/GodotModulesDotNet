@@ -32,6 +32,11 @@ public static class RandomUtils
 		float value = random.NextSingle() * (max - min) + min;
 		return value;
 	}
+
+	public static T PickRandom<T>(Random random, List<T> list)
+	{
+		return list[random.Next(list.Count)];
+	}
 }
 
 public static class ListUtils
@@ -270,5 +275,111 @@ public class Stat
 	{
 		value = Math.Clamp(value + amount, 0, maxValue);
 		OnChanged?.Invoke(value);
+	}
+}
+
+public static class LineDrawing
+{
+	public static float FPart(float x)
+	{
+		return x - MathF.Floor(x);
+	}
+
+	public static float RFPart(float x)
+	{
+		return 1.0f - FPart(x);
+	}
+
+	public static void DrawLine(float x0, float y0, float x1, float y1, Action<int, int, float> plot)
+	{
+		bool steep = MathF.Abs(y1 - y0) > MathF.Abs(x1 - x0);
+
+		if (steep)
+		{
+			Swap(ref x0, ref y0);
+			Swap(ref x1, ref y1);
+		}
+
+		if (x0 > x1)
+		{
+			Swap(ref x0, ref x1);
+			Swap(ref y0, ref y1);
+		}
+
+		float dx = x1 - x0;
+		float dy = y1 - y0;
+
+		float gradient = dx == 0.0f ? 1.0f : dy / dx;
+
+		// First endpoint
+		float xEnd = MathF.Floor(x0);
+		float yEnd = y0 + gradient * (xEnd - x0);
+		float xGap = 1.0f - (x0 - xEnd);
+
+		int xPixel1 = (int)xEnd;
+		int yPixel1 = (int)MathF.Floor(yEnd);
+
+		if (steep)
+		{
+			plot(yPixel1, xPixel1, RFPart(yEnd) * xGap);
+			plot(yPixel1 + 1, xPixel1, FPart(yEnd) * xGap);
+		}
+		else
+		{
+			plot(xPixel1, yPixel1, RFPart(yEnd) * xGap);
+			plot(xPixel1, yPixel1 + 1, FPart(yEnd) * xGap);
+		}
+
+		float interY = yEnd + gradient;
+
+		// Second endpoint
+		xEnd = MathF.Ceiling(x1);
+		yEnd = y1 + gradient * (xEnd - x1);
+		xGap = 1.0f - (xEnd - x1);
+
+		int xPixel2 = (int)xEnd;
+		int yPixel2 = (int)MathF.Floor(yEnd);
+
+		if (steep)
+		{
+			plot(yPixel2, xPixel2, RFPart(yEnd) * xGap);
+			plot(yPixel2 + 1, xPixel2, FPart(yEnd) * xGap);
+		}
+		else
+		{
+			plot(xPixel2, yPixel2, RFPart(yEnd) * xGap);
+			plot(xPixel2, yPixel2 + 1, FPart(yEnd) * xGap);
+		}
+
+		// Main loop
+		if (steep)
+		{
+			for (int x = xPixel1 + 1; x <= xPixel2 - 1; x++)
+			{
+				int y = (int)MathF.Floor(interY);
+
+				plot(y, x, RFPart(interY));
+				plot(y + 1, x, FPart(interY));
+
+				interY += gradient;
+			}
+		}
+		else
+		{
+			for (int x = xPixel1 + 1; x <= xPixel2 - 1; x++)
+			{
+				int y = (int)MathF.Floor(interY);
+
+				plot(x, y, RFPart(interY));
+				plot(x, y + 1, FPart(interY));
+
+				interY += gradient;
+			}
+		}
+	}
+
+	private static void Swap(ref float a, ref float b)
+	{
+		(a, b) = (b, a);
 	}
 }

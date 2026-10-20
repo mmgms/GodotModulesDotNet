@@ -4,6 +4,7 @@ using Godot;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -84,6 +85,14 @@ public class Grid2D<T> : IEnumerable<Grid2D<T>.IterData>
         Array.Fill(_data, value);
     }
 
+	public void FillFrom(Vector2I topLeft,  Grid2D<T> from)
+	{
+		foreach (var cell in from)
+		{
+			Set(topLeft + cell.Point, cell.Data);
+		}
+	}
+
     public T Get(int x, int y)
     {
         if (!IsInBounds(x, y))
@@ -152,8 +161,30 @@ public class Grid2D<T> : IEnumerable<Grid2D<T>.IterData>
             if (IsInBounds(n))
                 yield return n;
         }
-
     }
+
+	public IEnumerable<Vector2I> GetNeigh8AvoidCorners(Vector2I start, Func<T, bool> isSolid)
+	{
+		return GetNeighbours8(start)
+			.Where((end) => !isSolid(Get(end)))
+			.Where((end) =>
+			{
+				if(end.Y == start.Y || end.X == start.X)
+				{
+					return true;
+				}
+				var vecTo = end - start;
+				if(isSolid(Get(start + vecTo * new Vector2I(1, 0))))
+				{
+					return false;
+				}
+				if(isSolid(Get(start + vecTo * new Vector2I(0, 1))))
+				{
+					return false;
+				}
+				return true;
+			});
+	}
 
     public IEnumerable<Vector2I> GetNeighbours8NoBoundsCheck(Vector2I pos)
     {

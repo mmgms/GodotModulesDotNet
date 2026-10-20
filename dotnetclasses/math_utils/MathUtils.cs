@@ -18,6 +18,33 @@ public static class Definitions{
 }
 
 public static class Funtions {
+	public static bool IsPointInCone2D( Vector2 point, Vector2 conePos, Vector2 coneDir, float halfAngle)
+	{
+		float angleToTarget = coneDir.AngleTo(conePos.DirectionTo(point));
+
+		return Mathf.Abs(angleToTarget) < halfAngle;
+	}
+
+	public static bool IsPointInCone3D( Vector3 point, Vector3 conePos, Vector3 coneDir, float halfAngle)
+	{
+		float angleToTarget = coneDir.AngleTo(conePos.DirectionTo(point));
+
+		return Mathf.Abs(angleToTarget) < halfAngle;
+	}
+	
+	public static IEnumerable<Vector2I> getBorders(Vector2I size)
+	{
+		foreach (var i in Enumerable.Range(0, size.X))
+		{
+			yield return new Vector2I(i, 0);
+			yield return new Vector2I(i, size.Y-1);
+		}
+		foreach (var i in Enumerable.Range(0, size.Y))
+		{
+			yield return new Vector2I(0, i);
+			yield return new Vector2I(size.X-1, i);
+		}
+	}
 	
 	public static int getRotationIdx(float rotationRad)
 	{
