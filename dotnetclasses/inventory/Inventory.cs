@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using Godot;
 namespace Inventories;
 public class LimitedSizeInventory<T>
 {
@@ -27,11 +28,11 @@ public class LimitedSizeInventory<T>
 		}
 	}
 
-	private EqualityComparer<T> comparer;
-	private Func<T, int> getDurability;
+	private Func<T, T, bool> areItemsEqual; 
+	private Func<T, bool> getIsStackable;
 	private Func<T, int> getMaxStackAmount;
 
-	public LimitedSizeInventory(int capacity, EqualityComparer<T> comparer, Func<T, int> getDurability, Func<T, int> getMaxStackAmount, List<T> initialInventory=null)
+	public LimitedSizeInventory(int capacity, Func<T, T, bool> areItemEqual, Func<T, bool> getIsStackable, Func<T, int> getMaxStackAmount)
 	{
 		Debug.Assert(capacity > 0);
 		slots = new List<ItemSlot<T>>(capacity);
@@ -42,22 +43,16 @@ public class LimitedSizeInventory<T>
 				used = false
 			});
 		}
-		this.comparer = comparer;
-		this.getDurability = getDurability;
+		this.areItemsEqual = areItemEqual;
+		this.getIsStackable = getIsStackable;
 		this.getMaxStackAmount = getMaxStackAmount;
-		if (initialInventory != null)
-		{
-			foreach (var item in initialInventory)
-			{
-				addItem(item, getFirstAvailableSlot(item));
-			}
-		}
+		
 	}
 
 	public LimitedSizeInventory<T> getClone()
 	{
-		var newInventory = new LimitedSizeInventory<T>(slots.Capacity, this.comparer, this.getDurability, this.getMaxStackAmount);
-		Enumerable.Range(0, slots.Count-1).Where((i) => slots[i].used ).Select((i) =>
+		var newInventory = new LimitedSizeInventory<T>(slots.Capacity, this.areItemsEqual, this.getIsStackable, this.getMaxStackAmount);
+		Enumerable.Range(0, slots.Count).Where((i) => slots[i].used ).Select((i) =>
 		{
 			var thisSlot = slots[i];
 			var newSlot = newInventory.slots[i];
@@ -78,7 +73,7 @@ public class LimitedSizeInventory<T>
 
 	public bool hasItem(T item)
 	{
-		return slots.Any((x) => x.used && comparer.Equals(item, x.item));
+		return slots.Any((x) => x.used && areItemsEqual(item, x.item));
 	}
 
 	public T getItem(int id)
@@ -111,7 +106,7 @@ public class LimitedSizeInventory<T>
 		for (var i=0; i < slots.Count; i++)
 		{
 			var slot = slots[i];
-			if (slot.used && comparer.Equals(item, slot.item))
+			if (slot.used && areItemsEqual(item, slot.item))
 			{
 				yield return i;
 			}
@@ -139,7 +134,7 @@ public class LimitedSizeInventory<T>
 			{
 				continue;
 			}
-			if(!slots.Take(i).Any((x) => comparer.Equals(x.item, slots[i].item)))
+			if(!slots.Take(i).Any((x) => areItemsEqual(x.item, slots[i].item)))
 			{
 				yield return slots[i].item;
 			}
@@ -156,15 +151,15 @@ public class LimitedSizeInventory<T>
 		return slots[i].timesUsed;
 	}
 
-	public bool canBeStacked(T item)
+	public int getFirstUnusedSlot()
 	{
-		return getMaxStackAmount(item) > 1 && !(getDurability(item) > 1);
+		return Enumerable.Range(0, slots.Count).Where((x) => slots[x].used == false).FirstOrDefault(-1);
 	}
 
 	public int getFirstAvailableSlot(T item)
 	{ 
-		var firstEmptySlot = Enumerable.Range(0, slots.Count-1).Where((i) => !slots[i].used).FirstOrDefault(-1);
-		if (!canBeStacked(item))
+		var firstEmptySlot = Enumerable.Range(0, slots.Count).Where((i) => !slots[i].used).FirstOrDefault(-1);
+		if (!getIsStackable(item))
 		{
 			return firstEmptySlot;
 		}
@@ -177,18 +172,32 @@ public class LimitedSizeInventory<T>
 		return availableIdx;
 	}
 
+	public int getFirstUsedSlot(int fromIdx, int dir)
+	{
+		var currentIdx = Mathf.Wrap(fromIdx + dir, 0, slots.Count);
+		while (!slots[currentIdx].used)
+		{
+			currentIdx = Mathf.Wrap(currentIdx + dir, 0, slots.Count);
+			if (currentIdx == fromIdx)
+			{
+				return -1;
+			}
+		}
+		return currentIdx;
+	}
+
 	public void addItem(T item, int idx, int amount=1)
 	{
 		var slot = slots[idx];
-		var stackable = canBeStacked(item);
-		Debug.Assert(slot.used == false || (comparer.Equals(slot.item, item) && stackable));
+		var stackable = getIsStackable(item);
+		Debug.Assert(slot.used == false || (areItemsEqual(slot.item, item) && stackable));
 		if (stackable && slot.used)
 		{
 			Debug.Assert((slot.stackAmount + amount ) <= getMaxStackAmount(item));
 		}
 		if (!stackable)
 		{
-			Debug.Assert(amount == 1);
+			Debug.Assert(amount == 1 && !slot.used);
 		}
 		slot.used = true;
 		slot.item = item;
@@ -210,18 +219,11 @@ public class LimitedSizeInventory<T>
 		OnInventoryChagend?.Invoke();
 	}
 
-	public bool increaseTimesUsed(int idx)
+	public void increaseTimesUsed(int idx)
 	{
 		var slot = slots[idx];
 		Debug.Assert(slot.used = true);
 		slot.timesUsed += 1;
 		OnInventoryChagend?.Invoke();
-		return slot.timesUsed > getDurability(slot.item);
 	}
-
-
-
-
-
-
 }

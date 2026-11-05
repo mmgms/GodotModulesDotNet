@@ -1,5 +1,6 @@
 using Godot;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace PhysicsUtils;
 public static class Queries
@@ -103,13 +104,18 @@ public static class Queries
 		uint areaLayer,
 		Vector3 from,
 		Vector3 to,
-		bool hitFromInside = false)
+		bool hitFromInside = false,
+		IEnumerable<Area3D> excludeAreas = null)
 	{
 		var query = PhysicsRayQueryParameters3D.Create(from, to);
 		query.CollideWithAreas = true;
 		query.CollideWithBodies = true;
 		query.HitFromInside = hitFromInside;
 		query.CollisionMask = staticLayer | areaLayer;
+		if (excludeAreas != null)
+		{
+			query.Exclude = new Godot.Collections.Array<Rid>(excludeAreas.Select((x) => x.GetRid()));
+		}
 
 		var result = spaceState.IntersectRay(query);
 

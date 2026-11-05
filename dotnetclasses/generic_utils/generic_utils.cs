@@ -4,6 +4,42 @@ using System.Linq;
 using Godot;
 namespace GenericUtils;
 
+public static class NodeUtilities
+{
+	private static void FindChildrenRecursive(
+		Node node,
+		Func<Node, bool> filterCallback,
+		List<Node> nodesCollected)
+	{
+		if (filterCallback(node))
+		{
+			nodesCollected.Add(node);
+		}
+
+		foreach (Node child in node.GetChildren())
+		{
+			FindChildrenRecursive(child, filterCallback, nodesCollected);
+		}
+	}
+
+	// Collect all children recursively that satisfy a callback.
+	public static List<Node> FindChildren(
+		Node root,
+		Func<Node, bool> filterCallback)
+	{
+		List<Node> nodesCollected = new List<Node>();
+		FindChildrenRecursive(root, filterCallback, nodesCollected);
+		return nodesCollected;
+	}
+
+	public static Vector2 getViewportSize(Node node)
+	{
+		var size = node.GetViewport().GetVisibleRect().Size;
+		return size;
+	}
+
+}
+
 public static class EnumerableUtils
 {
 	
@@ -381,5 +417,85 @@ public static class LineDrawing
 	private static void Swap(ref float a, ref float b)
 	{
 		(a, b) = (b, a);
+	}
+}
+
+public static class VoxelUtils
+{
+	public static IEnumerable<Vector3I> getAllTilesInLine(
+		Vector3 start,
+		Vector3 end)
+	{
+		
+		var (gx0, gy0, gz0) = (start.X, start.Y, start.Z);
+		var (gx1, gy1, gz1) = (end.X, end.Y, end.Z);
+
+		var gx0idx = (int)MathF.Floor(start.X);
+		var gy0idx = (int)MathF.Floor(start.Y);
+		var gz0idx = (int)MathF.Floor(start.Z);
+		
+		var gx1idx = (int)MathF.Floor(end.X);
+		var gy1idx = (int)MathF.Floor(end.Y);
+		var gz1idx = (int)MathF.Floor(end.Z);
+		
+		var sx = gx1idx > gx0idx ? 1 : gx1idx < gx0idx ? -1 : 0;
+		var sy = gy1idx > gy0idx ? 1 : gy1idx < gy0idx ? -1 : 0;
+		var sz = gz1idx > gz0idx ? 1 : gz1idx < gz0idx ? -1 : 0;
+			
+		var gx = gx0idx;
+		var gy = gy0idx;
+		var gz = gz0idx;
+		
+		//Planes for each axis that we will next cross
+		var gxp = gx0idx + (gx1idx > gx0idx ? 1 : 0);
+		var gyp = gy0idx + (gy1idx > gy0idx ? 1 : 0);
+		var gzp = gz0idx + (gz1idx > gz0idx ? 1 : 0);
+		
+		//Only used for multiplying up the error margins
+		var vx = gx1 == gx0 ? 1 : gx1 - gx0;
+		var vy = gy1 == gy0 ? 1 : gy1 - gy0;
+		var vz = gz1 == gz0 ? 1 : gz1 - gz0;
+		
+		//Error is normalized to vx * vy * vz so we only have to multiply up
+		var vxvy = vx * vy;
+		var vxvz = vx * vz;
+		var vyvz = vy * vz;
+		
+		//Error from the next plane accumulators, scaled up by vx*vy*vz
+		var errx = (gxp - gx0) * vyvz;
+		var erry = (gyp - gy0) * vxvz;
+		var errz = (gzp - gz0) * vxvy;
+		
+		var derrx = sx * vyvz;
+		var derry = sy * vxvz;
+		var derrz = sz * vxvy;
+
+		var testEscape = 100;
+		do {
+			yield return new Vector3I(gx, gy, gz);
+			
+			if (gx == gx1idx && gy == gy1idx && gz == gz1idx) 
+				yield break;
+
+			//Which plane do we cross first?
+			var xr = Math.Abs(errx);
+			var yr = Math.Abs(erry);
+			var zr = Math.Abs(errz);
+			
+			if (sx != 0 && (sy == 0 || xr < yr) && (sz == 0 || xr < zr)) {
+				gx += sx;
+				errx += derrx;
+			}
+			else if (sy != 0 && (sz == 0 || yr < zr)) {
+				gy += sy;
+				erry += derry;
+			}
+			else if (sz != 0) {
+				gz += sz;
+				errz += derrz;
+			}
+
+	//	} while (true);
+		} while (testEscape -- >0);
 	}
 }

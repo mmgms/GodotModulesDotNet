@@ -14,10 +14,89 @@ public static class Definitions{
 		Mathf.Pi,
 		Mathf.Pi / 2.0f
 	};
+
+	public static readonly Vector2I[] FourDirections =
+    {
+        Vector2I.Down,
+        Vector2I.Left,
+        Vector2I.Right,
+        Vector2I.Up
+    };
+
+    public static readonly Vector2I[] EightDirections =
+    {
+        Vector2I.Down,
+        Vector2I.Left,
+        Vector2I.Right,
+        Vector2I.Up,
+        Vector2I.Down + Vector2I.Left,
+        Vector2I.Down + Vector2I.Right,
+        Vector2I.Up + Vector2I.Left,
+        Vector2I.Up + Vector2I.Right
+    };
+
+	public static readonly Vector3I[] SixDirections =
+    {
+        Vector3I.Down,
+        Vector3I.Left,
+        Vector3I.Right,
+        Vector3I.Up,
+		Vector3I.Forward,
+		Vector3I.Back
+    };
+
 	
 }
 
 public static class Funtions {
+
+	public static IEnumerable<Vector3I> getNeighbours4XZ(Vector3I point)
+	{
+		foreach (var i in Enumerable.Range(0, 4))
+		{
+			yield return point + new Vector3I(Definitions.FourDirections[i].X, 0, Definitions.FourDirections[i].Y);
+		};
+	}
+
+	public static IEnumerable<Vector3I> getNeighbours8XZ(Vector3I point)
+	{
+		foreach (var i in Enumerable.Range(0, 8))
+		{
+			yield return point + new Vector3I(Definitions.EightDirections[i].X, 0, Definitions.EightDirections[i].Y);
+		};
+	}
+
+	public static IEnumerable<Vector3I> getNeighbours6(Vector3I point)
+	{
+		foreach (var i in Enumerable.Range(0, 6))
+		{
+			yield return point + Definitions.SixDirections[i];
+		};
+	}
+
+	public static IEnumerable<Vector3I> getNeighbours8XZAvoidCorners(Vector3I start, Func<Vector3I, bool> isSolid)
+	{
+		return getNeighbours8XZ(start)
+			.Where((end) => !isSolid(end))
+			.Where((end) =>
+			{
+				if(end.X == start.X || end.Z == start.Z)
+				{
+					return true;
+				}
+				var vecTo = end - start;
+				if(isSolid(start + vecTo * new Vector3I(1, 0, 0)))
+				{
+					return false;
+				}
+				if(isSolid(start + vecTo * new Vector3I(0, 0, 1)))
+				{
+					return false;
+				}
+				return true;
+			});
+	}
+
 	public static bool IsPointInCone2D( Vector2 point, Vector2 conePos, Vector2 coneDir, float halfAngle)
 	{
 		float angleToTarget = coneDir.AngleTo(conePos.DirectionTo(point));
@@ -72,6 +151,16 @@ public static class Funtions {
 		return new Vector2(vec.X, vec.Y);
 	}
 
+	public static Vector3I toVec3I(Vector3 vec)
+	{
+		return new Vector3I((int)Math.Round(vec.X), (int)Math.Round(vec.Y), (int)Math.Round(vec.Z));
+	}
+
+	public static Vector3 toVec3(Vector3I vec)
+	{
+		return new Vector3(vec.X, vec.Y, vec.Z);
+	}
+
 	public static float Remap(float value, float minIn, float maxIn, float minOut, float maxOut)
 	{
 		return minOut + (value - minIn) * (maxOut - minOut) / (maxIn - minIn);
@@ -119,22 +208,43 @@ public static class Funtions {
 		);
 	}
 
-	public static Vector2 GetCenteredPositionFromGridIdx(
-		Vector2I idx,
-		Vector2 tileSize)
+	public static Vector2 GetCenteredPositionFromGridIdx( Vector2I idx, Vector2 tileSize)
 	{
 		return (new Vector2(idx.X, idx.Y) + Vector2.One * 0.5f) * tileSize;
 	}
 
-	public static Vector2 GetGridSnappedCenteredPosition(
-		Vector2 vec,
-		Vector2 tileSize)
+	public static Vector2 GetGridSnappedCenteredPosition(Vector2 vec,Vector2 tileSize)
 	{
 		return GetCenteredPositionFromGridIdx(
 			GetGridIdxFromPos(vec, tileSize),
 			tileSize
 		);
 	}
+
+	
+	public static Vector3I GetGridIdxFromPos(Vector3 vec, Vector3 tileSize)
+	{
+		Vector3 normVec = vec / tileSize;
+		return new Vector3I(
+			Mathf.FloorToInt(normVec.X),
+			Mathf.FloorToInt(normVec.Y),
+			Mathf.FloorToInt(normVec.Z)
+		);
+	}
+
+	public static Vector3 GetCenteredPositionFromGridIdx( Vector3I idx, Vector3 tileSize)
+	{
+		return (new Vector3(idx.X, idx.Y, idx.Z) + Vector3.One * 0.5f) * tileSize;
+	}
+
+	public static Vector3 GetGridSnappedCenteredPosition(Vector3 vec,Vector3 tileSize)
+	{
+		return GetCenteredPositionFromGridIdx(
+			GetGridIdxFromPos(vec, tileSize),
+			tileSize
+		);
+	}
+
 
 	public static Vector2 GetRotationSnappedDirection(
 		Vector2 vec,
@@ -204,6 +314,18 @@ public static class Funtions {
 		var temp = (positionCenter + rotatedVecToRelGridIdx).Floor();
 		return new Vector2I((int)temp.X, (int)temp.Y);
 		
+	}
+
+	public static Vector3 RandomDirectionXZ()
+	{
+		double angle = GD.Randf() * Mathf.Tau;
+		return new Vector3(Mathf.Cos((float)angle), 0, Mathf.Sin((float)angle));
+	}
+
+	public static Vector2 RandomDirection2D()
+	{
+		double angle = GD.Randf() * Mathf.Tau;
+		return new Vector2(Mathf.Cos((float)angle), Mathf.Sin((float)angle));
 	}
 
 
