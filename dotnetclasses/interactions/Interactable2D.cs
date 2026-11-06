@@ -7,8 +7,9 @@ public partial class Interactable2D : Area2D
 	{
 	}
 
-	private Action<InteracterData> _interactionCallback;
-	private Func<InteracterData, bool> _canInteractCallback;
+	public Func<bool, String> getInteractionHint;
+	public Action<InteracterData> interactionCallback;
+	public Func<InteracterData, bool> canInteractCallback;
 
 	public delegate void InteractorClose(InteracterData data);
 
@@ -42,29 +43,18 @@ public partial class Interactable2D : Area2D
 		return this;
 	}
 
-	public Interactable2D SetInteractionCallback(Action<InteracterData> interactionCallback)
-	{
-		_interactionCallback = interactionCallback;
-		return this;
-	}
-
-	public Interactable2D SetCanInteractCallback(Func<InteracterData, bool> canInteractCallback)
-	{
-		_canInteractCallback = canInteractCallback;
-		return this;
-	}
 
 	public bool CanInteract(InteracterData data)
 	{
-		if (_canInteractCallback == null)
+		if (canInteractCallback == null)
 			return true;
 
-		return _canInteractCallback(data);
+		return canInteractCallback(data);
 	}
 
 	public void Interact(InteracterData data)
 	{
-		_interactionCallback?.Invoke(data);
+		interactionCallback?.Invoke(data);
 	}
 
 	public void SignalInteracterClose(InteracterData data)

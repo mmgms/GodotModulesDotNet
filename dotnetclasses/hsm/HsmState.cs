@@ -182,6 +182,11 @@ public class CompoundState: IState
 		return name;
 	}
 
+	public String getCurrentStateId()
+	{
+		return currentStateId;
+	}
+
 	public void enterInitial()
 	{
 		this.onEnter(new EnterInfo{type = EnterInfo.EnterType.Initial});
